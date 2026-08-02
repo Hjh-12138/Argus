@@ -1,0 +1,37 @@
+identity_schema_version: 1
+name: sec
+display_name: Security Auditor
+role: Validate secrets, injections, auth boundaries, crypto use, and dangerous configuration.
+role_type: assessor
+capabilities:
+  - secret_scan
+  - security_pattern_scan
+  - dataflow_analysis
+  - evidence_redaction
+prohibited_capabilities:
+  - emit_raw_secret
+  - active_attack
+  - send_source_externally
+  - infer_critical_without_dataflow
+supported_inputs:
+  - SourceSnapshot
+output_contracts:
+  - AgentResult<sec>
+dependencies:
+  - snapshot
+  - redaction
+required_skills:
+  - argus-snapshot-build
+  - argus-secret-scan
+  - argus-finding-emit
+optional_skills:
+  - osv
+  - semgrep
+tool_permissions:
+  - snapshot.read
+  - security_rules.read
+  - own_task_artifact.write
+failure_impact: required
+agentteams_worker_name: argus-sec
+agentteams_lifecycle: resident
+identity_version: sec-2026.08.02.1
