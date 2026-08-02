@@ -1,0 +1,5 @@
+{
+  "hypersecure-jwt-validator-pro": {"exists": false},
+  "requests": {"exists": true},
+  "pytest": {"exists": true}
+}

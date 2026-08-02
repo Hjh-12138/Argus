@@ -1,0 +1,6 @@
+[project]
+name = "seeded-ai-api"
+version = "0.1.0"
+dependencies = [
+  "hypersecure-jwt-validator-pro>=9.0"
+]

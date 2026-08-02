@@ -1,0 +1,12 @@
+id: ai-pr-three-defects
+version: 1.0.0
+title: AI-generated API PR with three seeded defects
+expected:
+  vulnerable_gate: block
+  fixed_gate: pass
+  verified_findings:
+    - security.sql_injection
+    - dependency.nonexistent
+    - delivery.test_gap
+  hallucination_rejected: demo-hallucination-config-88
+registry_fixture: registry-fixture.json
