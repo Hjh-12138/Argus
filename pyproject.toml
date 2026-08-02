@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "argus"
+version = "2.0.0"
+description = "Argus v2 — Multi-agent AI code audit swarm with evidence-gated release"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+mcp = []
+
+[project.scripts]
+argus = "cli.argus:main"
+
+[tool.setuptools]
+packages = ["core", "cli", "agents", "agents.dep", "agents.code", "agents.sec",
+            "agents.delivery", "agents.meta", "agents.synth", "agentteams"]
+package-dir = { "" = "." }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["agentteams: requires running AgentTeams (Docker)"]
+addopts = "-m 'not agentteams'"
