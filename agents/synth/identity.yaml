@@ -1,0 +1,39 @@
+identity_schema_version: 1
+name: synth
+display_name: Audit Synthesizer and Release Gate Presenter
+role: Deduplicate reviewed findings, apply deterministic release policy, and materialize reports.
+role_type: synthesizer
+capabilities:
+  - finding_deduplicate
+  - release_policy_evaluate
+  - report_materialize
+prohibited_capabilities:
+  - rescan_source
+  - create_finding
+  - modify_finding_facts
+  - upgrade_meta_label
+  - freeform_llm_gate
+  - use_mcp
+supported_inputs:
+  - AgentResult
+  - MetaDecision
+  - SourceSnapshot
+  - PolicyConfig
+output_contracts:
+  - AuditReport
+  - PolicyDecision
+dependencies:
+  - all_scheduled_terminal
+  - meta_consistency_pass
+required_skills:
+  - argus-release-policy-evaluate
+  - argus-report-materialize
+optional_skills: []
+tool_permissions:
+  - reviewed_result.read
+  - policy.execute
+  - report.write
+failure_impact: required
+agentteams_worker_name: argus-synth
+agentteams_lifecycle: resident
+identity_version: synth-2026.08.02.1

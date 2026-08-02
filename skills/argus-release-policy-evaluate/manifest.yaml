@@ -1,0 +1,18 @@
+name: argus-release-policy-evaluate
+version: 0.1.0
+owner: argus
+license: Apache-2.0
+category: policy
+purpose: Compute deterministic release gate from Meta-verified findings.
+entrypoint: implementation.main:invoke
+input_schema: schemas/input.schema.json
+output_schema: schemas/output.schema.json
+error_schema: schemas/error.schema.json
+permissions: [reviewed_result.read, policy.execute]
+network: none
+timeout_seconds: 5
+retry: none
+idempotency: input_digest
+cancellation: atomic
+trace_operation: argus.skill.release-policy-evaluate
+reusable_by: [synth]

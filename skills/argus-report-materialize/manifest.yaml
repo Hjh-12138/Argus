@@ -1,0 +1,18 @@
+name: argus-report-materialize
+version: 0.1.0
+owner: argus
+license: Apache-2.0
+category: report
+purpose: Atomically materialize schema-valid JSON and Markdown audit reports.
+entrypoint: implementation.main:invoke
+input_schema: schemas/input.schema.json
+output_schema: schemas/output.schema.json
+error_schema: schemas/error.schema.json
+permissions: [reviewed_result.read, report.write]
+network: none
+timeout_seconds: 10
+retry: none
+idempotency: report_digest
+cancellation: atomic_write
+trace_operation: argus.skill.report-materialize
+reusable_by: [synth]

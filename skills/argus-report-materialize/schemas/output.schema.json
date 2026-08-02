@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"ReportOutput","type":"object","additionalProperties":false,"required":["status","report_json","report_md"],"properties":{"status":{"const":"succeeded"},"report_json":{"type":"string"},"report_md":{"type":"string"}}}

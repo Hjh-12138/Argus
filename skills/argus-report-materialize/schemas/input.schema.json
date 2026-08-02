@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"ReportInput","type":"object","additionalProperties":false,"required":["run_id","snapshot","agent_results","meta_decisions","policy"],"properties":{"run_id":{"type":"string"},"snapshot":{"type":"object"},"agent_results":{"type":"array"},"meta_decisions":{"type":"array"},"policy":{"type":"object"}}}
