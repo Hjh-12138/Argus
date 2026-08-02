@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FindingEmitOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "finding_id", "finding"],
+  "properties": {
+    "status": {"const": "succeeded"},
+    "finding_id": {"type": "string"},
+    "finding": {"type": "object"}
+  }
+}

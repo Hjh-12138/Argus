@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EvidenceVerifyInput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["snapshot_id", "snapshot_root", "snapshot_files", "finding"],
+  "properties": {
+    "snapshot_id": {"type": "string"},
+    "snapshot_root": {"type": "string"},
+    "snapshot_files": {"type": "array", "items": {"type": "object"}},
+    "finding": {"type": "object"}
+  }
+}

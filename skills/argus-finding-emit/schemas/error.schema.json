@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SkillError",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "category", "code", "retryable", "message"],
+  "properties": {
+    "status": {"const": "failed"},
+    "category": {"type": "string", "enum": ["invalid_input", "authorization", "capability_unavailable", "transient_external", "permanent_external", "timeout", "cancelled", "resource_exhausted", "schema_mismatch", "unsafe_data", "internal"]},
+    "code": {"type": "string"},
+    "retryable": {"type": "boolean"},
+    "message": {"type": "string"}
+  }
+}

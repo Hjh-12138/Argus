@@ -1,0 +1,22 @@
+name: argus-evidence-verify
+version: 0.1.0
+owner: argus
+license: Apache-2.0
+category: evidence
+purpose: Independently verify Finding path, line, hash, evidence, and actionability.
+entrypoint: implementation.main:invoke
+input_schema: schemas/input.schema.json
+output_schema: schemas/output.schema.json
+error_schema: schemas/error.schema.json
+permissions:
+  - snapshot.read
+  - agent_result.read
+  - meta_artifact.write
+  - revision_request.write
+network: none
+timeout_seconds: 10
+retry: none
+idempotency: snapshot_and_finding_digest
+cancellation: safe_points
+trace_operation: argus.skill.evidence-verify
+reusable_by: [meta]

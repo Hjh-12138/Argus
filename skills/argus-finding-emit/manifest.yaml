@@ -1,0 +1,20 @@
+name: argus-finding-emit
+version: 0.1.0
+owner: argus
+license: Apache-2.0
+category: finding
+purpose: Convert detector observations into schema-valid Finding artifacts.
+entrypoint: implementation.main:invoke
+input_schema: schemas/input.schema.json
+output_schema: schemas/output.schema.json
+error_schema: schemas/error.schema.json
+permissions:
+  - snapshot.read
+  - own_task_artifact.write
+network: none
+timeout_seconds: 5
+retry: none
+idempotency: input_digest
+cancellation: safe_points
+trace_operation: argus.skill.finding-emit
+reusable_by: [dep, arch, code, sec, perf, robust, delivery, atk]
