@@ -15,6 +15,11 @@ _FORBIDDEN_KEYS = {
     "reasoning_text", "raw_prompt", "raw_response", "source_code",
     "secret", "api_key", "private_reasoning",
 }
+_ALLOWED_SPANS = {
+    ("controller", "audit"),
+    ("model", "llm_call"),
+    ("tool", "scan"),
+}
 
 
 def _now() -> str:
@@ -42,6 +47,10 @@ class TraceRecorder:
 
     def start_span(self, trace_id: str, kind: str,
                    operation_name: str) -> str:
+        if trace_id not in self.traces:
+            raise ValueError("unknown trace_id")
+        if (kind, operation_name) not in _ALLOWED_SPANS:
+            raise ValueError(f"unregistered span: {kind}/{operation_name}")
         span_id = str(uuid.uuid4())
         self.records.append({
             "trace_id": trace_id,
@@ -85,5 +94,10 @@ class TraceRecorder:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         with target.open("w", encoding="utf-8", newline="\n") as handle:
+            for trace in self.traces.values():
+                handle.write(json.dumps({
+                    **trace,
+                    "record_type": "trace",
+                }, ensure_ascii=False) + "\n")
             for record in self.records:
                 handle.write(json.dumps(record, ensure_ascii=False) + "\n")

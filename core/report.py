@@ -12,11 +12,34 @@ from pathlib import Path
 
 from core.meta import MetaDecision
 from core.policy import PolicyDecision
+from core.redaction import redact
 from core.schemas import AgentResult, SourceSnapshot, finding_to_dict
 
 
 class ReportWriteError(Exception):
     pass
+
+
+_FORBIDDEN_REPORT_KEYS = {
+    "private_reasoning", "reasoning_text", "raw_prompt", "raw_response",
+    "source_code", "secret", "api_key",
+}
+
+
+def _sanitize_report_value(value):
+    if isinstance(value, dict):
+        return {
+            key: _sanitize_report_value(item)
+            for key, item in value.items()
+            if str(key).lower() not in _FORBIDDEN_REPORT_KEYS
+        }
+    if isinstance(value, list):
+        return [_sanitize_report_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_report_value(item) for item in value]
+    if isinstance(value, str):
+        return redact(value)
+    return value
 
 
 def render_report(run_id: str, snapshot: SourceSnapshot,
@@ -114,7 +137,9 @@ def write_report(output_dir: str | Path, data: dict) -> tuple[Path, Path]:
     out.mkdir(parents=True, exist_ok=True)
     json_path = out / "report.json"
     md_path = out / "report.md"
-    json_tmp = _write_temp(out, json.dumps(data, ensure_ascii=False, indent=2))
+    sanitized = _sanitize_report_value(data)
+    json_tmp = _write_temp(
+        out, json.dumps(sanitized, ensure_ascii=False, indent=2))
     # 在发布前回读并校验 JSON 可解析、关键字段存在。
     try:
         parsed = json.loads(json_tmp.read_text(encoding="utf-8"))

@@ -16,7 +16,12 @@ def test_trace_records_structured_events(tmp_path):
     lines = (tmp_path / "trace.jsonl").read_text(
         encoding="utf-8").strip().splitlines()
     assert lines
-    event = json.loads(lines[1])
+    trace = json.loads(lines[0])
+    assert trace["trace_id"] == trace_id
+    assert trace["run_id"] == "r1"
+    assert trace["snapshot_id"] == "s1"
+    assert trace["project_scope_id"] == "p1"
+    event = json.loads(lines[2])
     assert event["trace_id"] == trace_id
     assert event["span_id"] == span_id
     assert event["event"] == "scheduled"
@@ -37,6 +42,22 @@ def test_private_fields_forbidden():
     })
 
     assert recorder.last_attrs == {"duration_ms": 12}
+
+
+def test_unregistered_span_kind_and_operation_are_rejected():
+    recorder = TraceRecorder()
+    trace_id = recorder.new_trace(
+        run_id="r", snapshot_id="s", project_scope="p")
+
+    for kind, operation in (
+            ("private", "audit"),
+            ("controller", "raw prompt contents")):
+        try:
+            recorder.start_span(trace_id, kind, operation)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"accepted unregistered span {kind}/{operation}")
 
 
 def test_unknown_events_and_nested_attributes_are_not_recorded():
