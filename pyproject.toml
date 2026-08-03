@@ -23,6 +23,9 @@ packages = ["core", "cli", "agents", "agents.dep", "agents.code", "agents.sec",
             "agents.delivery", "agents.meta", "agents.synth", "agentteams"]
 package-dir = { "" = "." }
 
+[tool.setuptools.package-data]
+agentteams = ["contract.lock.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["agentteams: requires running AgentTeams (Docker)"]

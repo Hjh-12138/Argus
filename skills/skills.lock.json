@@ -1,0 +1,47 @@
+{
+  "schema_version": "1",
+  "locked_at": "2026-08-02",
+  "skills": [
+    {
+      "name": "argus-evidence-verify",
+      "version": "0.1.0",
+      "sha256": "b134af18f0ede5fd3e8ca8a4a2391bc8197574182372810a8ea36736ff0b0441"
+    },
+    {
+      "name": "argus-finding-emit",
+      "version": "0.1.0",
+      "sha256": "7f8500fe9a816c13922af42238e23bf9a85a2306711ee03faaca3e1e80686c82"
+    },
+    {
+      "name": "argus-release-policy-evaluate",
+      "version": "0.1.0",
+      "sha256": "fde1a3a43c7048c1a5f2ca09311272cf11705fa4b7aafedab8edb7ae7adcfddd"
+    },
+    {
+      "name": "argus-report-materialize",
+      "version": "0.1.0",
+      "sha256": "96b830ba035a91443773d5e3d8c5ee001837641ac34ca5a90e80445f84bfd596"
+    }
+  ],
+  "assignments": {
+    "argus-dep": [
+      "argus-finding-emit"
+    ],
+    "argus-code": [
+      "argus-finding-emit"
+    ],
+    "argus-sec": [
+      "argus-finding-emit"
+    ],
+    "argus-delivery": [
+      "argus-finding-emit"
+    ],
+    "argus-meta": [
+      "argus-evidence-verify"
+    ],
+    "argus-synth": [
+      "argus-release-policy-evaluate",
+      "argus-report-materialize"
+    ]
+  }
+}

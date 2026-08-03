@@ -162,6 +162,7 @@ class Orchestrator:
 
     def ensure_core_workers(self, timeout_s: int = 300) -> list[dict]:
         states = []
+        locked_digests = self._locked_skill_digests()
         for worker in WORKERS.values():
             state = self.client.ensure_worker(
                 worker.name, self.model, self.runtime, soul=self._soul(worker))
@@ -170,21 +171,22 @@ class Orchestrator:
             self.client.apply_worker_package(
                 worker.name, self.model, self.runtime, self._soul(worker),
                 [self.workspace / "skills" / skill for skill in worker.skills],
+                {skill: locked_digests[skill] for skill in worker.skills},
             )
             self.client.configure_worker(
                 worker.name, self.model, self.runtime,
                 soul=self._soul(worker), skills=worker.skills,
             )
-            if not self._wait_configured_worker(worker, timeout_s):
-                raise HiclawError(f"worker {worker.name} config did not converge")
             if not self._wait_worker_skill_files(worker, timeout_s):
                 raise HiclawError(f"worker {worker.name} Skills did not materialize")
-            current = self.client.get_workers(worker.name)
-            states.append(current[0] if current else state)
+            configured = self._wait_configured_worker(worker, timeout_s)
+            if configured is None:
+                raise HiclawError(f"worker {worker.name} config did not converge")
+            states.append(configured)
         return states
 
     def _wait_configured_worker(self, worker: WorkerDefinition,
-                                timeout_s: int) -> bool:
+                                timeout_s: int) -> dict | None:
         import time
         deadline = time.monotonic() + timeout_s
         expected_skills = set(worker.skills)
@@ -199,9 +201,9 @@ class Orchestrator:
             skills_match = set(registry.get("skills") or ()) == expected_skills
             if (skills_match and phase == "Running"
                     and container == "running"):
-                return True
+                return current[0]
             time.sleep(2)
-        return False
+        return None
 
     def _wait_worker_skill_files(self, worker: WorkerDefinition,
                                  timeout_s: int) -> bool:
@@ -230,6 +232,7 @@ class Orchestrator:
         if status in ("SUCCESS", "SUCCESS_WITH_NOTES"):
             if artifact is None:
                 raise HiclawError(f"task {task_id} succeeded without machine artifact")
+            self._validate_success_artifact(project_meta, task_meta, artifact)
             task_meta["status"] = "completed"
             task_meta["completed_at"] = _now()
             task_meta["outcome"] = status
@@ -415,6 +418,16 @@ class Orchestrator:
         self._validate_artifact(task_meta, artifact)
         return artifact
 
+    @staticmethod
+    def _validate_success_artifact(project_meta: dict, task_meta: dict,
+                                   artifact: dict | list) -> None:
+        if task_meta.get("kind") not in ("assessor", "revision"):
+            return
+        if not isinstance(artifact, dict) or artifact.get("status") != "completed":
+            raise HiclawError("successful assessor requires a completed machine artifact")
+        if artifact.get("input_snapshot_id") != project_meta.get("snapshot_id"):
+            raise HiclawError("machine artifact snapshot does not match project")
+
     def _validate_artifact(self, task_meta: dict,
                            artifact: dict | list) -> None:
         kind = task_meta.get("kind")
@@ -455,6 +468,12 @@ class Orchestrator:
         lock = json.loads(
             (self.workspace / "agentteams/contract.lock.json").read_text(encoding="utf-8"))
         return str(lock["model"])
+
+    def _locked_skill_digests(self) -> dict[str, str]:
+        lock = json.loads(
+            (self.workspace / "skills/skills.lock.json").read_text(encoding="utf-8"))
+        return {str(item["name"]): str(item["sha256"])
+                for item in lock["skills"]}
 
     def _validate_request(self, request: dict) -> dict:
         if not isinstance(request, dict):

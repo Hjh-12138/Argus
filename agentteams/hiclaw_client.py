@@ -1,0 +1,394 @@
+"""Typed wrapper around the pinned AgentTeams control-plane interfaces.
+
+Worker lifecycle always goes through ``hiclaw``. Project, Matrix, MinIO, and
+Skill operations use the Manager's versioned built-in scripts because
+AgentTeams v1.2.0-beta.1 does not expose those resources through hiclaw.
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import re
+import subprocess
+import tempfile
+import zipfile
+from pathlib import Path, PurePosixPath
+from typing import Iterable
+
+
+class HiclawError(Exception):
+    pass
+
+
+_TEXT_SKILL_SUFFIXES = {".json", ".md", ".py", ".txt", ".yaml", ".yml"}
+
+
+def _skill_artifact_bytes(path: Path) -> bytes:
+    content = path.read_bytes()
+    if path.suffix.lower() in _TEXT_SKILL_SUFFIXES:
+        return content.replace(b"\r\n", b"\n")
+    return content
+
+
+def skill_directory_digest(directory: Path) -> str:
+    """Hash every Skill artifact using stable paths and canonical text bytes."""
+    root = Path(directory).resolve()
+    digest = hashlib.sha256()
+    sources = (path for path in root.rglob("*") if path.is_file()
+               and "__pycache__" not in path.parts and path.suffix != ".pyc")
+    for source in sorted(sources):
+        relative = source.relative_to(root).as_posix().encode("utf-8")
+        content = _skill_artifact_bytes(source)
+        digest.update(relative)
+        digest.update(b"\0")
+        digest.update(content)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+class HiclawClient:
+    PROJECT_SCRIPT = "/opt/hiclaw/agent/skills/project-management/scripts/create-project.sh"
+    SHARED_ROOT = PurePosixPath("/root/hiclaw-fs/shared")
+    STORAGE_ROOT = "agentteams/agentteams-storage/shared"
+
+    def __init__(self, container: str | None = None):
+        self.container = container or self._detect_manager_container()
+
+    @staticmethod
+    def _detect_manager_container() -> str:
+        probe = subprocess.run(
+            ["docker", "ps", "--format", "{{.Names}}"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=15,
+        )
+        if probe.returncode == 0:
+            names = set(probe.stdout.splitlines())
+            for candidate in ("agentteams-manager", "hiclaw-manager"):
+                if candidate in names:
+                    return candidate
+        return "agentteams-manager"
+
+    def _docker_exec(self, *args: str, timeout: int = 60,
+                     input_text: str | None = None) -> str:
+        command = ["docker", "exec"]
+        if input_text is not None:
+            command.append("-i")
+        command.extend([self.container, *args])
+        try:
+            proc = subprocess.run(
+                command, input=input_text, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=timeout,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise HiclawError(f"docker exec failed: {exc}") from exc
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout).strip()
+            raise HiclawError(f"{' '.join(args)} failed in {self.container}: {detail}")
+        return proc.stdout.strip()
+
+    def _run(self, *args: str, timeout: int = 60) -> str:
+        return self._docker_exec("hiclaw", *args, timeout=timeout)
+
+    @staticmethod
+    def _json_output(raw: str, context: str) -> dict:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise HiclawError(f"{context} returned invalid JSON") from exc
+        if not isinstance(data, dict):
+            raise HiclawError(f"{context} returned unexpected JSON")
+        return data
+
+    def get_workers(self, name: str | None = None) -> list[dict]:
+        args = ["get", "workers"]
+        if name:
+            args.append(name)
+        args.extend(["-o", "json"])
+        data = self._json_output(self._run(*args), "hiclaw get workers")
+        if "workers" in data and isinstance(data["workers"], list):
+            return list(data["workers"])
+        if "name" in data:
+            return [data]
+        raise HiclawError("unexpected hiclaw worker response")
+
+    def create_worker(self, name: str, model: str, runtime: str = "openclaw",
+                      *, soul: str = "", skills: Iterable[str] = (),
+                      no_wait: bool = True) -> dict:
+        args = ["create", "worker", "--name", name, "--model", model,
+                "--runtime", runtime]
+        if soul:
+            args.extend(["--soul", soul])
+        skill_names = sorted(set(skills))
+        if skill_names:
+            args.extend(["--skills", ",".join(skill_names)])
+        if no_wait:
+            args.append("--no-wait")
+        args.extend(["-o", "json"])
+        return self._json_output(
+            self._run(*args, timeout=180), f"hiclaw create worker {name}")
+
+    def ensure_worker(self, name: str, model: str, runtime: str = "openclaw",
+                      *, soul: str = "", skills: Iterable[str] = ()) -> dict:
+        current = self.get_workers()
+        found = next((w for w in current if w.get("name") == name), None)
+        return found or self.create_worker(
+            name, model, runtime, soul=soul, skills=skills, no_wait=True)
+
+    def configure_worker(self, name: str, model: str,
+                         runtime: str = "openclaw", *, soul: str = "",
+                         skills: Iterable[str] = ()) -> None:
+        args = ["apply", "worker", "--name", name, "--model", model,
+                "--runtime", runtime]
+        if soul:
+            args.extend(["--soul", soul])
+        skill_names = sorted(set(skills))
+        if skill_names:
+            args.extend(["--skills", ",".join(skill_names)])
+        self._run(*args, timeout=180)
+
+    def ensure_ready(self, name: str, timeout_s: int = 300) -> bool:
+        self._run("worker", "ensure-ready", "--name", name, timeout=60)
+        return self.wait_ready(name, timeout_s)
+
+    def wait_ready(self, name: str, timeout_s: int = 300) -> bool:
+        import time
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            workers = self.get_workers(name)
+            if workers:
+                phase = workers[0].get("phase")
+                if phase in ("Ready", "Running"):
+                    return True
+                if phase == "Failed":
+                    raise HiclawError(
+                        f"worker {name} failed: {workers[0].get('message', 'unknown error')}")
+            time.sleep(5)
+        return False
+
+    def apply_worker_package(self, name: str, model: str, runtime: str,
+                             soul: str, skill_dirs: Iterable[Path],
+                             locked_digests: dict[str, str]) -> None:
+        """Publish locked Skills through AgentTeams' controller-owned ZIP path."""
+        self._validate_id(name, "worker")
+        skill_paths = [Path(p).resolve() for p in skill_dirs]
+        for path in skill_paths:
+            if (not (path / "SKILL.md").is_file()
+                    or not re.fullmatch(r"argus-[a-z0-9-]+", path.name)):
+                raise HiclawError(f"invalid skill directory: {path}")
+            expected = locked_digests.get(path.name)
+            actual = skill_directory_digest(path)
+            if expected != actual:
+                raise HiclawError(
+                    f"Skill digest mismatch for {path.name}: "
+                    f"expected {expected or 'missing'}, got {actual}")
+        with tempfile.TemporaryDirectory(prefix="argus-worker-package-") as tmp:
+            package = Path(tmp) / "package"
+            (package / "config").mkdir(parents=True)
+            (package / "config/SOUL.md").write_text(soul, encoding="utf-8")
+            manifest = {
+                "type": "worker", "version": 1,
+                "worker": {"suggested_name": name, "model": model,
+                           "runtime": runtime},
+                "source": {"hostname": "argus", "locked_skills": True},
+            }
+            (package / "manifest.json").write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+            zip_path = Path(tmp) / f"{name}.zip"
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                archive.write(package / "manifest.json", "manifest.json")
+                archive.write(package / "config/SOUL.md", "config/SOUL.md")
+                for skill in skill_paths:
+                    sources = (path for path in skill.rglob("*") if path.is_file()
+                               and "__pycache__" not in path.parts
+                               and path.suffix != ".pyc")
+                    for source in sorted(sources):
+                        relative = source.relative_to(skill).as_posix()
+                        archive.writestr(
+                            f"skills/{skill.name}/{relative}",
+                            _skill_artifact_bytes(source),
+                        )
+            container_zip = f"/tmp/{name}-argus-skills.zip"
+            copied = subprocess.run(
+                ["docker", "cp", str(zip_path),
+                 f"{self.container}:{container_zip}"],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=60,
+            )
+            if copied.returncode != 0:
+                raise HiclawError(
+                    f"failed to stage worker package: "
+                    f"{(copied.stderr or copied.stdout).strip()}")
+            try:
+                self._run(
+                    "apply", "worker", "--name", name, "--zip", container_zip,
+                    "--runtime", runtime, timeout=180,
+                )
+            finally:
+                self._docker_exec("rm", "-f", container_zip, timeout=30)
+
+    def read_worker_registry_entry(self, worker: str) -> dict:
+        import time
+        self._validate_id(worker, "worker")
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            try:
+                raw = self._docker_exec(
+                    "jq", "-c", "--arg", "name", worker,
+                    ".workers[$name] // {}",
+                    "/root/manager-workspace/workers-registry.json",
+                    timeout=10,
+                )
+                return self._json_output(raw, "Manager worker registry")
+            except HiclawError:
+                time.sleep(1)
+        raise HiclawError("Manager worker registry did not become readable")
+
+    def worker_skill_exists(self, worker: str, skill: str) -> bool:
+        self._validate_id(worker, "worker")
+        if not re.fullmatch(r"argus-[a-z0-9-]+", skill):
+            raise HiclawError(f"unsafe skill name: {skill}")
+        container = f"agentteams-worker-{worker}"
+        path = f"/root/hiclaw-fs/agents/{worker}/skills/{skill}/SKILL.md"
+        proc = subprocess.run(
+            ["docker", "exec", container, "test", "-f", path],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=30,
+        )
+        return proc.returncode == 0
+
+    def create_project(self, project_id: str, title: str,
+                       workers: Iterable[str]) -> dict:
+        self._validate_id(project_id, "project")
+        worker_names = tuple(dict.fromkeys(workers))
+        if not worker_names:
+            raise HiclawError("project requires at least one worker")
+        for worker in worker_names:
+            self._validate_id(worker, "worker")
+        raw = self._docker_exec(
+            "bash", self.PROJECT_SCRIPT,
+            "--id", project_id, "--title", title,
+            "--workers", ",".join(worker_names), timeout=180,
+        )
+        marker = "---RESULT---"
+        if marker not in raw:
+            raise HiclawError("create-project.sh returned no result marker")
+        return self._json_output(raw.rsplit(marker, 1)[1].strip(), "create project")
+
+    def write_shared_text(self, relative_path: str, content: str) -> None:
+        relative = self._shared_relative(relative_path)
+        target = self.SHARED_ROOT / relative
+        script = (
+            "set -eu; target=\"$1\"; mkdir -p \"$(dirname \"$target\")\"; "
+            "umask 077; cat > \"$target\""
+        )
+        self._docker_exec(
+            "sh", "-c", script, "argus-write", str(target),
+            input_text=content, timeout=60,
+        )
+
+    def publish_shared_text(self, relative_path: str, content: str) -> None:
+        """Publish exact content to MinIO and the Manager mirror.
+
+        Project creation has a background mirror that can race with a local
+        rewrite. Publishing from a private temporary file makes the MinIO
+        object authoritative before updating the shared local mirror.
+        """
+        relative = self._shared_relative(relative_path)
+        local = self.SHARED_ROOT / relative
+        remote = f"{self.STORAGE_ROOT}/{relative.as_posix()}"
+        script = r'''
+set -eu
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+cat > "$tmp"
+mc cp "$tmp" "$2" >/dev/null
+mkdir -p "$(dirname "$1")"
+cp "$tmp" "$1"
+'''.strip()
+        self._docker_exec(
+            "sh", "-c", script, "argus-publish", str(local), remote,
+            input_text=content, timeout=60,
+        )
+
+    def read_shared_text(self, relative_path: str, *, refresh: bool = False) -> str:
+        relative = self._shared_relative(relative_path)
+        local = self.SHARED_ROOT / relative
+        if refresh:
+            remote = f"{self.STORAGE_ROOT}/{relative.as_posix()}"
+            self._docker_exec("mc", "cp", remote, str(local), timeout=60)
+        return self._docker_exec("cat", str(local), timeout=60)
+
+    def shared_exists(self, relative_path: str, *, refresh: bool = False) -> bool:
+        relative = self._shared_relative(relative_path)
+        local = self.SHARED_ROOT / relative
+        if refresh:
+            remote = f"{self.STORAGE_ROOT}/{relative.as_posix()}"
+            try:
+                self._docker_exec("mc", "stat", remote, timeout=30)
+                return True
+            except HiclawError:
+                return False
+        proc = subprocess.run(
+            ["docker", "exec", self.container, "test", "-e", str(local)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=30,
+        )
+        return proc.returncode == 0
+
+    def sync_shared_directory(self, relative_path: str) -> None:
+        relative = self._shared_relative(relative_path)
+        local = f"{self.SHARED_ROOT / relative}/"
+        remote = f"{self.STORAGE_ROOT}/{relative.as_posix()}/"
+        self._docker_exec("mc", "mirror", local, remote, "--overwrite", timeout=120)
+
+    def pull_shared_directory(self, relative_path: str) -> None:
+        relative = self._shared_relative(relative_path)
+        local = f"{self.SHARED_ROOT / relative}/"
+        remote = f"{self.STORAGE_ROOT}/{relative.as_posix()}/"
+        self._docker_exec("mkdir", "-p", local)
+        self._docker_exec("mc", "mirror", remote, local, "--overwrite", timeout=120)
+
+    def send_project_message(self, room_id: str, body: str,
+                             mentions: Iterable[str] = ()) -> None:
+        encoded = base64.b64encode(body.encode("utf-8")).decode("ascii")
+        mention_json = json.dumps(list(mentions), ensure_ascii=True)
+        script = r'''
+set -eu
+[ -f /opt/hiclaw/scripts/lib/hiclaw-env.sh ] && . /opt/hiclaw/scripts/lib/hiclaw-env.sh
+[ -f /data/hiclaw-secrets.env ] && . /data/hiclaw-secrets.env
+if [ -z "${MANAGER_MATRIX_TOKEN:-}" ]; then
+  MANAGER_MATRIX_TOKEN=$(curl -fsS -X POST "${AGENTTEAMS_MATRIX_URL}/_matrix/client/v3/login" \
+    -H 'Content-Type: application/json' \
+    -d '{"type":"m.login.password","identifier":{"type":"m.id.user","user":"manager"},"password":"'"${AGENTTEAMS_MANAGER_PASSWORD}"'"}' \
+    | jq -r '.access_token // empty')
+fi
+: "${MANAGER_MATRIX_TOKEN:?manager Matrix token unavailable}"
+body=$(printf '%s' "$2" | base64 -d)
+txn="argus-$(date +%s%N)"
+payload=$(jq -n --arg body "$body" --argjson mentions "$3" \
+  '{msgtype:"m.text",body:$body,"m.mentions":{user_ids:$mentions}}')
+curl -fsS -X PUT \
+  "${AGENTTEAMS_MATRIX_URL}/_matrix/client/v3/rooms/$1/send/m.room.message/${txn}" \
+  -H "Authorization: Bearer ${MANAGER_MATRIX_TOKEN}" \
+  -H 'Content-Type: application/json' -d "$payload" >/dev/null
+'''.strip()
+        self._docker_exec(
+            "bash", "-c", script, "argus-message", room_id, encoded,
+            mention_json, timeout=60,
+        )
+
+    @staticmethod
+    def _validate_id(value: str, kind: str) -> None:
+        if not re.fullmatch(r"[a-z][a-z0-9-]{2,63}", value):
+            raise HiclawError(f"invalid {kind} id: {value!r}")
+
+    @staticmethod
+    def _shared_relative(value: str) -> PurePosixPath:
+        normalized = value.replace("\\", "/")
+        path = PurePosixPath(normalized)
+        if path.is_absolute() or ".." in path.parts or not path.parts:
+            raise HiclawError(f"unsafe shared path: {value!r}")
+        if path.parts[0] not in ("projects", "tasks"):
+            raise HiclawError("shared path must be under projects/ or tasks/")
+        return path

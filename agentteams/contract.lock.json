@@ -1,0 +1,21 @@
+{
+  "schema_version": "1",
+  "agentteams_version": "v1.2.0-beta.1",
+  "commit": "78d0ceda336befa6e62bf89fc1a6b08b965e128d",
+  "manager_container": "agentteams-manager",
+  "controller_container": "agentteams-controller",
+  "cli_entrypoint": "docker exec agentteams-manager hiclaw",
+  "verified_commands": [
+    "create",
+    "get",
+    "apply",
+    "delete",
+    "update",
+    "status"
+  ],
+  "runtime": "openclaw",
+  "llm_provider": "openai-compat",
+  "model": "deepseek-v4-flash",
+  "embedded_image_digest": "sha256:4467037493afa32b0a13f7fc6e0054b6e8e694067c7a7c33937cf930b86b8447",
+  "verified_date": "2026-08-02"
+}
