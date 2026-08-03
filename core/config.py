@@ -69,9 +69,14 @@ def _parse_yaml_simple(text: str) -> dict:
         line = raw.split("#", 1)[0].rstrip()
         if not line.strip():
             continue
-        if not line.startswith((" ", "\t")) and line.rstrip().endswith(":"):
-            section = line.rstrip().rstrip(":").strip()
-            out[section] = {}
+        if not line.startswith((" ", "\t")):
+            if line.rstrip().endswith(":"):
+                section = line.rstrip().rstrip(":").strip()
+                out[section] = {}
+            elif ":" in line:
+                key, _, value = line.partition(":")
+                out[key.strip()] = value.strip().strip("'\"")
+                section = None
         elif section and ":" in line:
             k, _, v = line.strip().partition(":")
             v = v.strip().strip("'\"")

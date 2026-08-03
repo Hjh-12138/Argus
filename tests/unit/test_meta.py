@@ -12,7 +12,9 @@ def _snapshot(tmp_path, rel="app.py", content="x=1\n"):
     path = tmp_path / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
-    sf = SnapshotFile(path=rel, sha256=_sha(content), size=len(content), language="py")
+    written = path.read_bytes()
+    sf = SnapshotFile(path=rel, sha256=hashlib.sha256(written).hexdigest(),
+                      size=len(written), language="py")
     return SourceSnapshot(root=str(tmp_path), files=(sf,)), sf
 
 

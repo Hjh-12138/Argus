@@ -28,6 +28,7 @@ def test_snapshot_skips_binary_and_oversize(tmp_path):
 
 
 def test_snapshot_paths_are_posix_relative(tmp_path):
+    (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "a.py").write_text("x=1\n", encoding="utf-8")
     snap, _ = SnapshotBuilder().build(tmp_path)
     for f in snap.files:

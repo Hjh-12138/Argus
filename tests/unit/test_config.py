@@ -13,7 +13,8 @@ def test_unknown_field_rejected(tmp_path):
 def test_incomplete_run_enum(tmp_path):
     (tmp_path / "argus.yaml").write_text("policy:\n  incomplete_run: nonsense\n",
                                         encoding="utf-8")
-    with pytest.raises(ConfigValidationError)
+    with pytest.raises(ConfigValidationError):
+        load_config([], tmp_path)
 
 
 def test_cli_overrides_project(tmp_path):
@@ -42,7 +43,8 @@ def test_env_overrides_project(tmp_path, monkeypatch):
 
 def test_mcp_network_must_be_metadata_only(tmp_path):
     (tmp_path / "argus.yaml").write_text("mcp:\n  network: full\n", encoding="utf-8")
-    with pytest.raises(ConfigValidationError)
+    with pytest.raises(ConfigValidationError):
+        load_config([], tmp_path)
 
 
 def test_effective_config_redacts_api_key(tmp_path):
