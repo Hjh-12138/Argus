@@ -70,12 +70,31 @@ def test_a1_fails_when_gate_is_not_block(tmp_path, monkeypatch):
     assert pn._a1_local(ev).status == "FAIL"
 
 
+def test_agentteams_completed_marker():
+    assert pn._agentteams_completed(
+        "[argus] project=p status=completed gate=block")
+    assert not pn._agentteams_completed("Traceback ... task did not reach terminal")
+
+
 def test_a2_requires_block_on_agentteams_demo(tmp_path, monkeypatch):
     ev = _evidence(tmp_path)
-    monkeypatch.setattr(ev, "run_command", lambda *a, **k: {"exit": 2})
+    monkeypatch.setattr(ev, "run_command",
+                        lambda *a, **k: {"exit": 2, "stdout": "status=completed"})
     assert pn._a2_agentteams_demo(ev, True).status == "PASS"
-    monkeypatch.setattr(ev, "run_command", lambda *a, **k: {"exit": 0})
-    assert pn._a2_agentteams_demo(ev, True).status == "FAIL"
+    monkeypatch.setattr(ev, "run_command",
+                        lambda *a, **k: {"exit": 0, "stdout": "status=completed"})
+    item = pn._a2_agentteams_demo(ev, True)
+    assert item.status == "FAIL"
+    assert "block" in item.detail
+
+
+def test_a2_fails_when_crash_without_completion_marker(tmp_path, monkeypatch):
+    ev = _evidence(tmp_path)
+    monkeypatch.setattr(ev, "run_command",
+                        lambda *a, **k: {"exit": 1, "stdout": "Traceback ..."})
+    item = pn._a2_agentteams_demo(ev, True)
+    assert item.status == "FAIL"
+    assert "did not complete" in item.detail
 
 
 def test_a3_passes_when_fixed_and_clean(tmp_path, monkeypatch):

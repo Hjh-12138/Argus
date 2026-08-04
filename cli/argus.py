@@ -203,7 +203,7 @@ def _cmd_audit(args) -> int:
 def _audit_agentteams(args, cfg, store, run_id: int, target: Path) -> int:
     """Formal headless audit on real AgentTeams Workers and typed Tasks."""
     from core.workspace_snapshot import WorkspaceSnapshotBuilder
-    from agentteams.hiclaw_client import HiclawClient
+    from agentteams.hiclaw_client import HiclawClient, HiclawError
     from agentteams.project_driver import ProjectDriver
     from agentteams.worker_payloads import SnapshotReference
 
@@ -227,9 +227,14 @@ def _audit_agentteams(args, cfg, store, run_id: int, target: Path) -> int:
     client = HiclawClient()
     driver = ProjectDriver(client, Path.cwd())
     request = {"project_id": f"argus-run-{run_id}", "run_id": f"run-{run_id}"}
-    outcome = driver.run(request, snapshot_ref,
-                         profile="phase-one-acceptance",
-                         acceptance_probe=None)
+    try:
+        outcome = driver.run(request, snapshot_ref,
+                             profile="phase-one-acceptance",
+                             acceptance_probe=None)
+    except HiclawError as exc:
+        store.transition(run_id, "RUNNING", "PARTIAL")
+        print(f"[argus] agentteams audit failed: {exc}", file=sys.stderr)
+        return SYSTEM_ERROR
     store.save_run(run_id, gate=outcome.gate)
     print(f"[argus] project={outcome.project_id} status={outcome.status} "
           f"gate={outcome.gate}")

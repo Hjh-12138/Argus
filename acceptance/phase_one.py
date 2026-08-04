@@ -49,6 +49,15 @@ def _audit_completed(exit_code: int) -> bool:
     return exit_code in AUDIT_EXITS
 
 
+def _agentteams_completed(stdout: str) -> bool:
+    """True only when the agentteams audit printed its terminal completion line.
+
+    An unhandled task failure surfaces as a Python traceback with a low exit
+    code, so the gate exit code alone cannot prove the audit completed.
+    """
+    return "status=completed" in stdout
+
+
 def _read_report(path: Path) -> dict | None:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -147,8 +156,10 @@ def _a2_agentteams_demo(evidence: EvidenceCollector, live: bool) -> AcceptanceIt
         return AcceptanceItem("A2", "BLOCKED", "requires --agentteams-live")
     result = _run_audit(evidence, "A2-agentteams-demo", DEMO / "vulnerable",
                         engine="agentteams", timeout=1800)
-    if not _audit_completed(result.get("exit", -1)):
-        return AcceptanceItem("A2", "FAIL", "demo agentteams audit did not complete")
+    if not (_audit_completed(result.get("exit", -1))
+            and _agentteams_completed(result.get("stdout", ""))):
+        return AcceptanceItem("A2", "FAIL",
+                              "demo agentteams audit did not complete on real Workers")
     if result.get("exit") != 2:
         return AcceptanceItem("A2", "FAIL",
                               f"vulnerable demo gate exit={result.get('exit')}, want block(2)")
@@ -180,8 +191,10 @@ def _a4_koubo(evidence: EvidenceCollector, target: Path, workspace_mode: str,
         return AcceptanceItem("A4", "FAIL", "target not readable")
     result = _run_audit(evidence, "A4-koubo-agentteams", target,
                         engine="agentteams", registry_fixture=False, timeout=1800)
-    if not _audit_completed(result.get("exit", -1)):
-        return AcceptanceItem("A4", "FAIL", "koubo agentteams audit did not complete")
+    if not (_audit_completed(result.get("exit", -1))
+            and _agentteams_completed(result.get("stdout", ""))):
+        return AcceptanceItem("A4", "FAIL",
+                              "koubo agentteams audit did not complete on real Workers")
     return AcceptanceItem("A4", "PASS",
                           "koubo current-source snapshot ran on real Workers")
 
