@@ -51,6 +51,7 @@ class HiclawClient:
     PROJECT_SCRIPT = "/opt/hiclaw/agent/skills/project-management/scripts/create-project.sh"
     SHARED_ROOT = PurePosixPath("/root/hiclaw-fs/shared")
     STORAGE_ROOT = "agentteams/agentteams-storage/shared"
+    ARGUS_WORKER_IMAGE = "agentteams/worker-agent:v1.2.0-beta.1-argus.2"
 
     def __init__(self, container: str | None = None):
         self.container = container or self._detect_manager_container()
@@ -69,12 +70,12 @@ class HiclawClient:
                     return candidate
         return "agentteams-manager"
 
-    def _docker_exec(self, *args: str, timeout: int = 60,
-                     input_text: str | None = None) -> str:
+    def _docker_exec_in(self, container: str, *args: str, timeout: int = 60,
+                        input_text: str | None = None) -> str:
         command = ["docker", "exec"]
         if input_text is not None:
             command.append("-i")
-        command.extend([self.container, *args])
+        command.extend([container, *args])
         try:
             proc = subprocess.run(
                 command, input=input_text, capture_output=True, text=True,
@@ -84,8 +85,13 @@ class HiclawClient:
             raise HiclawError(f"docker exec failed: {exc}") from exc
         if proc.returncode != 0:
             detail = (proc.stderr or proc.stdout).strip()
-            raise HiclawError(f"{' '.join(args)} failed in {self.container}: {detail}")
+            raise HiclawError(f"{' '.join(args)} failed in {container}: {detail}")
         return proc.stdout.strip()
+
+    def _docker_exec(self, *args: str, timeout: int = 60,
+                     input_text: str | None = None) -> str:
+        return self._docker_exec_in(
+            self.container, *args, timeout=timeout, input_text=input_text)
 
     def _run(self, *args: str, timeout: int = 60) -> str:
         return self._docker_exec("hiclaw", *args, timeout=timeout)
@@ -227,35 +233,131 @@ class HiclawClient:
             finally:
                 self._docker_exec("rm", "-f", container_zip, timeout=30)
 
-    def read_worker_registry_entry(self, worker: str) -> dict:
-        import time
-        self._validate_id(worker, "worker")
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            try:
-                raw = self._docker_exec(
-                    "jq", "-c", "--arg", "name", worker,
-                    ".workers[$name] // {}",
-                    "/root/manager-workspace/workers-registry.json",
-                    timeout=10,
-                )
-                return self._json_output(raw, "Manager worker registry")
-            except HiclawError:
-                time.sleep(1)
-        raise HiclawError("Manager worker registry did not become readable")
+    # ------------------------------------------------------------------
+    # Typed Task protocol (v1) against the fork controller.
+    # ------------------------------------------------------------------
 
-    def worker_skill_exists(self, worker: str, skill: str) -> bool:
-        self._validate_id(worker, "worker")
-        if not re.fullmatch(r"argus-[a-z0-9-]+", skill):
-            raise HiclawError(f"unsafe skill name: {skill}")
-        container = f"agentteams-worker-{worker}"
-        path = f"/root/hiclaw-fs/agents/{worker}/skills/{skill}/SKILL.md"
-        proc = subprocess.run(
-            ["docker", "exec", container, "test", "-f", path],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=30,
+    def register_task(self, request: dict) -> dict:
+        import time
+        payload = json.dumps(request, ensure_ascii=False)
+        path = f"/tmp/argus-task-{int(time.time() * 1000)}.json"
+        self._docker_exec(
+            "sh", "-c", "cat > \"$1\"", "argus-task-write", path,
+            input_text=payload, timeout=30,
         )
-        return proc.returncode == 0
+        try:
+            raw = self._run("task", "register", "--file", path, "-o", "json",
+                            timeout=60)
+            return self._json_output(raw, "task register")
+        finally:
+            try:
+                self._docker_exec("rm", "-f", path, timeout=15)
+            except HiclawError:
+                pass
+
+    def get_task(self, task_id: str) -> dict:
+        self._validate_id(task_id, "task")
+        raw = self._run("task", "get", "--id", task_id, "-o", "json", timeout=60)
+        return self._json_output(raw, "task get")
+
+    def dispatch_task(self, task_id: str, revision: int) -> dict:
+        self._validate_id(task_id, "task")
+        raw = self._run("task", "dispatch", "--id", task_id,
+                        "--revision", str(revision), "-o", "json", timeout=60)
+        return self._json_output(raw, "task dispatch")
+
+    def ack_task(self, task_id: str, revision: int) -> dict:
+        self._validate_id(task_id, "task")
+        raw = self._run("task", "ack", "--id", task_id,
+                        "--revision", str(revision), "-o", "json", timeout=60)
+        return self._json_output(raw, "task ack")
+
+    def start_task(self, task_id: str, revision: int) -> dict:
+        self._validate_id(task_id, "task")
+        raw = self._run("task", "start", "--id", task_id,
+                        "--revision", str(revision), "-o", "json", timeout=60)
+        return self._json_output(raw, "task start")
+
+    def terminal_task(self, task_id: str, revision: int, state: str,
+                      code: str) -> dict:
+        self._validate_id(task_id, "task")
+        raw = self._run("task", "terminal", "--id", task_id,
+                        "--revision", str(revision), "--state", state,
+                        "--code", code, "-o", "json", timeout=60)
+        return self._json_output(raw, "task terminal")
+
+    def wait_task(self, task_id: str, terminal: set[str],
+                  timeout_s: int = 300) -> dict:
+        import time
+        self._validate_id(task_id, "task")
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            record = self.get_task(task_id)["task"]
+            if record.get("state") in terminal:
+                return record
+            time.sleep(5)
+        raise HiclawError(f"task {task_id} did not reach terminal state")
+
+    def get_worker_skill_observation(self, worker: str) -> dict:
+        """Read the Worker's observed remote-Skill generation state."""
+        self._validate_id(worker, "worker")
+        container = f"agentteams-worker-{worker}"
+        raw = self._docker_exec_in(
+            container, "sh", "-c",
+            "[ -f /root/hiclaw-fs/agents/$1/.skills/observed.json ] && "
+            "cat /root/hiclaw-fs/agents/$1/.skills/observed.json || echo {}",
+            "argus-observed", worker, timeout=30,
+        )
+        try:
+            return self._json_output(raw, "worker skill observation")
+        except HiclawError:
+            return {}
+
+    def apply_worker_remote_skills(self, name: str, model: str,
+                                   runtime: str, soul: str,
+                                   source: str, auth_type: str,
+                                   skill_versions: dict[str, str]) -> None:
+        """Apply a Worker CR that declares remoteSkills from the lock.
+
+        Custom Argus Skills never travel through the built-in `--skills` flag.
+        """
+        self._validate_id(name, "worker")
+        yaml_lines = [
+            "apiVersion: agentteams.io/v1beta1",
+            "kind: Worker",
+            "metadata:",
+            f"  name: {name}",
+            "spec:",
+            f"  model: {model}",
+            f"  runtime: {runtime}",
+            f"  image: {self.ARGUS_WORKER_IMAGE}",
+            "  skills: []",
+            "  remoteSkills:",
+            "    - source: " + source,
+            f"      authType: {auth_type}",
+            "      skills:",
+        ]
+        for skill_name in sorted(skill_versions):
+            yaml_lines.append(f"        - name: {skill_name}")
+            yaml_lines.append(f"          version: {skill_versions[skill_name]}")
+        if soul:
+            yaml_lines.append("  soul: |")
+            for line in soul.splitlines():
+                yaml_lines.append("    " + line)
+        yaml_text = "\n".join(yaml_lines) + "\n"
+        import time
+        path = f"/tmp/argus-worker-{int(time.time() * 1000)}.yaml"
+        self._docker_exec(
+            "sh", "-c", "cat > \"$1\"", "argus-worker-write", path,
+            input_text=yaml_text, timeout=30,
+        )
+        try:
+            self._run("apply", "--file", path, timeout=180)
+        finally:
+            try:
+                self._docker_exec("rm", "-f", path, timeout=15)
+            except HiclawError:
+                pass
 
     def create_project(self, project_id: str, title: str,
                        workers: Iterable[str]) -> dict:

@@ -35,10 +35,10 @@ def test_six_core_workers_resident(hiclaw):
         worker = WORKERS[agent]
         assert worker.name in workers, f"{worker.name} not registered"
         assert workers[worker.name].get("phase") in ("Ready", "Running")
-        registry = hiclaw.read_worker_registry_entry(worker.name)
-        assert set(registry.get("skills") or ()) == set(worker.skills)
-        for skill in worker.skills:
-            assert hiclaw.worker_skill_exists(worker.name, skill)
+        observed = hiclaw.get_worker_skill_observation(worker.name)
+        ready = {skill.get("name") for skill in observed.get("skills", [])
+                 if skill.get("ready")}
+        assert ready == set(worker.skills)
 
 
 def test_locked_skill_assignments_match_orchestrator():

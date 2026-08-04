@@ -10,7 +10,7 @@ from agentteams.orchestrator import Orchestrator, WORKERS
 
 class RecordingWorkerClient:
     def __init__(self):
-        self.packages = []
+        self.remote_applies = []
 
     def ensure_worker(self, name, model, runtime, *, soul):
         return {"name": name, "phase": "Running", "containerState": "running"}
@@ -18,22 +18,18 @@ class RecordingWorkerClient:
     def ensure_ready(self, name, timeout_s):
         return True
 
-    def apply_worker_package(self, name, model, runtime, soul, skill_dirs,
-                             locked_digests):
-        self.packages.append((name, locked_digests))
+    def apply_worker_remote_skills(self, name, model, runtime, soul,
+                                   source, auth_type, skill_versions):
+        self.remote_applies.append((name, skill_versions))
 
-    def configure_worker(self, name, model, runtime, *, soul, skills):
-        return None
+    def get_worker_skill_observation(self, worker):
+        entry = next(worker_def for worker_def in WORKERS.values()
+                     if worker_def.name == worker)
+        return {"skills": [{"name": skill, "ready": True}
+                           for skill in entry.skills]}
 
     def get_workers(self, name):
         return [{"name": name, "phase": "Running", "containerState": "running"}]
-
-    def read_worker_registry_entry(self, name):
-        worker = next(worker for worker in WORKERS.values() if worker.name == name)
-        return {"skills": list(worker.skills)}
-
-    def worker_skill_exists(self, worker, skill):
-        return True
 
 
 class FinalStateWorkerClient(RecordingWorkerClient):
@@ -46,9 +42,56 @@ class FinalStateWorkerClient(RecordingWorkerClient):
         return [{"name": name, "phase": phase,
                  "containerState": phase.lower()}]
 
-    def worker_skill_exists(self, worker, skill):
+    def get_worker_skill_observation(self, worker):
         self.skill_checked = True
-        return True
+        entry = next(worker_def for worker_def in WORKERS.values()
+                     if worker_def.name == worker)
+        return {"skills": [{"name": skill, "ready": True}
+                           for skill in entry.skills]}
+
+
+class WorkerRemoteSkillApplyTests(unittest.TestCase):
+    def test_observation_reads_target_worker_container(self):
+        client = HiclawClient.__new__(HiclawClient)
+        client.container = "agentteams-manager"
+        calls = []
+
+        def docker_exec_in(container, *args, **kwargs):
+            calls.append((container, args))
+            return '{"generation":"g1","skills":[]}'
+
+        client._docker_exec_in = docker_exec_in
+
+        observed = client.get_worker_skill_observation("argus-dep")
+
+        self.assertEqual("g1", observed["generation"])
+        self.assertEqual("agentteams-worker-argus-dep", calls[0][0])
+
+    def test_apply_clears_legacy_builtin_skills(self):
+        client = HiclawClient.__new__(HiclawClient)
+        client.container = "unused"
+        payloads = []
+
+        def docker_exec(*args, **kwargs):
+            if kwargs.get("input_text") is not None:
+                payloads.append(kwargs["input_text"])
+            return ""
+
+        client._docker_exec = docker_exec
+        client._run = lambda *args, **kwargs: ""
+
+        client.apply_worker_remote_skills(
+            "argus-dep", "model", "openclaw", "",
+            "nacos://nacos:8848/public", "nacos",
+            {"argus-dependency-inspect": "0.0.1"},
+        )
+
+        self.assertEqual(1, len(payloads))
+        self.assertIn("  skills: []\n", payloads[0])
+        self.assertIn(
+            "  image: agentteams/worker-agent:v1.2.0-beta.1-argus.2\n",
+            payloads[0],
+        )
 
 
 class SkillDirectoryDigestTests(unittest.TestCase):
@@ -108,10 +151,11 @@ class SkillDirectoryDigestTests(unittest.TestCase):
         lock = json.loads(
             (workspace / "skills/skills.lock.json").read_text(encoding="utf-8"))
 
+        self.assertEqual(len(lock["skills"]), 8)
         for item in lock["skills"]:
             actual = hiclaw_client.skill_directory_digest(
                 workspace / "skills" / item["name"])
-            self.assertEqual(item["sha256"], actual, item["name"])
+            self.assertEqual(item["local_sha256"], actual, item["name"])
 
     def test_orchestrator_observes_final_running_state_after_skill_materialization(self):
         workspace = Path(__file__).resolve().parents[2]
@@ -122,19 +166,18 @@ class SkillDirectoryDigestTests(unittest.TestCase):
         self.assertTrue(states)
         self.assertTrue(all(state["phase"] == "Running" for state in states))
 
-    def test_orchestrator_supplies_locked_digests_for_every_worker_package(self):
+    def test_orchestrator_applies_remote_skills_for_every_worker(self):
         workspace = Path(__file__).resolve().parents[2]
         client = RecordingWorkerClient()
 
         Orchestrator(client, workspace).ensure_core_workers(timeout_s=1)
 
-        self.assertEqual(len(WORKERS), len(client.packages))
-        for worker_name, locked_digests in client.packages:
+        self.assertEqual(len(WORKERS), len(client.remote_applies))
+        for worker_name, skill_versions in client.remote_applies:
             worker = next(worker for worker in WORKERS.values()
                           if worker.name == worker_name)
-            self.assertEqual(set(worker.skills), set(locked_digests))
-            self.assertTrue(all(len(value) == 64
-                                for value in locked_digests.values()))
+            self.assertEqual(set(worker.skills), set(skill_versions))
+            self.assertTrue(all(len(value) >= 3 for value in skill_versions.values()))
 
 
 if __name__ == "__main__":

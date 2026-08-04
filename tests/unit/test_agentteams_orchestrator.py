@@ -16,13 +16,6 @@ class StableWorkerClient:
             "roomID": "!room:matrix-local.agentteams.io:18080",
         }]
 
-    def read_worker_registry_entry(self, name):
-        return {
-            "runtime": "openclaw",
-            "skills": ["argus-finding-emit"],
-            "skills_updated_at": "2026-08-03T07:25:24Z",
-        }
-
 
 class RestartingWorkerClient(StableWorkerClient):
     def __init__(self):
@@ -39,9 +32,6 @@ class RestartingWorkerClient(StableWorkerClient):
             "matrixUserID": "@argus-sec:matrix-local.agentteams.io:18080",
             "roomID": "!room:matrix-local.agentteams.io:18080",
         }]
-
-    def worker_skill_exists(self, worker, skill):
-        return True
 
 
 class WorkerConvergenceTests(unittest.TestCase):

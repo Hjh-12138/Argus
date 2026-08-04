@@ -42,22 +42,22 @@ WORKERS = {
     "dep": WorkerDefinition(
         "dep", "argus-dep",
         "Dependency auditor. Validate manifests and registry evidence without installing dependencies.",
-        ("argus-finding-emit",),
+        ("argus-dependency-inspect", "argus-finding-emit"),
     ),
     "code": WorkerDefinition(
         "code", "argus-code",
         "Code auditor. Validate correctness and state contracts without executing target code.",
-        ("argus-finding-emit",),
+        ("argus-code-rule-scan", "argus-finding-emit"),
     ),
     "sec": WorkerDefinition(
         "sec", "argus-sec",
         "Security auditor. Validate static security evidence and never emit raw secrets.",
-        ("argus-finding-emit",),
+        ("argus-secret-scan", "argus-finding-emit"),
     ),
     "delivery": WorkerDefinition(
         "delivery", "argus-delivery",
         "Delivery auditor. Validate CI and release evidence without triggering CI or deployment.",
-        ("argus-finding-emit",),
+        ("argus-ci-policy-check", "argus-finding-emit"),
     ),
     "meta": WorkerDefinition(
         "meta", "argus-meta",
@@ -162,34 +162,53 @@ class Orchestrator:
 
     def ensure_core_workers(self, timeout_s: int = 300) -> list[dict]:
         states = []
-        locked_digests = self._locked_skill_digests()
+        lock = self._locked_skill_versions()
+        source = str(lock.get("source", ""))
+        auth_type = str(lock.get("auth_type", "none"))
         for worker in WORKERS.values():
             state = self.client.ensure_worker(
                 worker.name, self.model, self.runtime, soul=self._soul(worker))
             if not self.client.ensure_ready(worker.name, timeout_s):
                 raise HiclawError(f"worker {worker.name} did not become Running")
-            self.client.apply_worker_package(
+            self.client.apply_worker_remote_skills(
                 worker.name, self.model, self.runtime, self._soul(worker),
-                [self.workspace / "skills" / skill for skill in worker.skills],
-                {skill: locked_digests[skill] for skill in worker.skills},
+                source, auth_type,
+                {skill: lock["skills"][skill] for skill in worker.skills},
             )
-            self.client.configure_worker(
-                worker.name, self.model, self.runtime,
-                soul=self._soul(worker), skills=worker.skills,
-            )
-            if not self._wait_worker_skill_files(worker, timeout_s):
-                raise HiclawError(f"worker {worker.name} Skills did not materialize")
+            if not self._wait_worker_skill_observed(worker, timeout_s):
+                raise HiclawError(f"worker {worker.name} remote Skills did not converge")
             configured = self._wait_configured_worker(worker, timeout_s)
             if configured is None:
                 raise HiclawError(f"worker {worker.name} config did not converge")
             states.append(configured)
         return states
 
+    def _locked_skill_versions(self) -> dict:
+        lock = json.loads(
+            (self.workspace / "skills" / "skills.lock.json").read_text(encoding="utf-8"))
+        versions = {
+            str(item["name"]): str(item["version"]) for item in lock["skills"]
+        }
+        return {"source": lock.get("source", ""), "auth_type": lock.get("auth_type", "none"),
+                "skills": versions}
+
+    def _wait_worker_skill_observed(self, worker: WorkerDefinition,
+                                    timeout_s: int) -> bool:
+        import time
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            observed = self.client.get_worker_skill_observation(worker.name)
+            skills = observed.get("skills", [])
+            ready = {s.get("name") for s in skills if s.get("ready")}
+            if ready >= set(worker.skills):
+                return True
+            time.sleep(2)
+        return False
+
     def _wait_configured_worker(self, worker: WorkerDefinition,
                                 timeout_s: int) -> dict | None:
         import time
         deadline = time.monotonic() + timeout_s
-        expected_skills = set(worker.skills)
         while time.monotonic() < deadline:
             current = self.client.get_workers(worker.name)
             if not current:
@@ -197,24 +216,10 @@ class Orchestrator:
                 continue
             phase = current[0].get("phase")
             container = current[0].get("containerState")
-            registry = self.client.read_worker_registry_entry(worker.name)
-            skills_match = set(registry.get("skills") or ()) == expected_skills
-            if (skills_match and phase == "Running"
-                    and container == "running"):
+            if phase == "Running" and container == "running":
                 return current[0]
             time.sleep(2)
         return None
-
-    def _wait_worker_skill_files(self, worker: WorkerDefinition,
-                                 timeout_s: int) -> bool:
-        import time
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
-            if all(self.client.worker_skill_exists(worker.name, skill)
-                   for skill in worker.skills):
-                return True
-            time.sleep(2)
-        return False
 
     def ingest_task_result(self, project_id: str, task_id: str,
                            *, revision_target: str | None = None) -> TaskOutcome:
