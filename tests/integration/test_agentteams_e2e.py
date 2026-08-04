@@ -29,12 +29,13 @@ def test_workers_listable(hiclaw):
     assert isinstance(workers, list)
 
 
-def test_six_core_workers_resident(hiclaw):
-    workers = {w.get("name"): w for w in hiclaw.get_workers()}
+def test_six_core_workers_resident(hiclaw, orchestrator):
+    workers = {w.get("name") for w in hiclaw.get_workers()}
     for agent in CORE_AGENTS:
         worker = WORKERS[agent]
         assert worker.name in workers, f"{worker.name} not registered"
-        assert workers[worker.name].get("phase") in ("Ready", "Running")
+        state = orchestrator._wait_configured_worker(worker, 120)
+        assert state is not None, f"{worker.name} did not become Running"
         observed = hiclaw.get_worker_skill_observation(worker.name)
         ready = {skill.get("name") for skill in observed.get("skills", [])
                  if skill.get("ready")}
