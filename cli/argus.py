@@ -42,11 +42,29 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument("--headless", action="store_true")
     audit.add_argument("--block-on")
     audit.add_argument("--registry-fixture")
+    audit.add_argument("--engine", choices=["agentteams", "local"],
+                       default="agentteams",
+                       help="Execution engine for headless audits (default: agentteams)")
+    audit.add_argument("--workspace-mode", choices=["current-source", "plain"],
+                       default="plain")
+    audit.add_argument("--acceptance-probe", choices=["hallucination-revision"],
+                       default=None, help=argparse.SUPPRESS)
     audit.add_argument("--demo-invalid-finding", action="store_true",
                        help=argparse.SUPPRESS)
 
     pf = sub.add_parser("preflight", help="Validate target and environment")
     pf.add_argument("--target", required=True)
+
+    acceptance = sub.add_parser("acceptance", help="Phase-one acceptance commands")
+    acceptance_sub = acceptance.add_subparsers(dest="acceptance_cmd", required=True)
+    phase_one = acceptance_sub.add_parser("phase-one", help="Run A1-A8 acceptance")
+    phase_one.add_argument("--target", required=True)
+    phase_one.add_argument("--workspace-mode", default="current-source")
+    phase_one.add_argument("--agentteams-live", action="store_true")
+    phase_one.add_argument("--acceptance-probe", default="hallucination-revision")
+    phase_one.add_argument("--leakage-e2e", action="store_true")
+    cleanup = acceptance_sub.add_parser("cleanup", help="Exact-manifest cleanup")
+    cleanup.add_argument("--run-id", required=True)
 
     return parser
 
@@ -56,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.cmd == "preflight":
             return _cmd_preflight(args)
+        if args.cmd == "acceptance":
+            return _cmd_acceptance(args)
         return _cmd_audit(args)
     except KeyboardInterrupt:
         print("[argus] cancelled", file=sys.stderr)
@@ -80,6 +100,23 @@ def _cmd_preflight(args) -> int:
     return 0 if result.ok else SYSTEM_ERROR
 
 
+def _begin_audit(store, run_id: str, target: Path, cfg) -> object | None:
+    """CREATED -> PREFLIGHT prefix shared by the local and AgentTeams engines.
+
+    The AgentTeams engine must not jump straight to SNAPSHOTTING: the run
+    state machine only allows CREATED -> PREFLIGHT first. Returns the
+    preflight result, or None after recording a FAILED transition when the
+    target contains unsafe symlinks.
+    """
+    store.transition(run_id, "CREATED", "PREFLIGHT")
+    pf = preflight(target, cfg)
+    if pf.unsafe_links:
+        store.transition(run_id, "PREFLIGHT", "FAILED")
+        print(f"[argus] unsafe symlink(s): {pf.unsafe_links}", file=sys.stderr)
+        return None
+    return pf
+
+
 def _cmd_audit(args) -> int:
     cli_overrides: list[str] = []
     if args.block_on:
@@ -91,14 +128,12 @@ def _cmd_audit(args) -> int:
     store = StateStore(Path(".argus/state.db"))
     run_id = store.begin_run()
 
-    try:
-        store.transition(run_id, "CREATED", "PREFLIGHT")
-        pf = preflight(target, cfg)
-        if pf.unsafe_links:
-            store.transition(run_id, "PREFLIGHT", "FAILED")
-            print(f"[argus] unsafe symlink(s): {pf.unsafe_links}", file=sys.stderr)
-            return SYSTEM_ERROR
+    if args.headless and args.engine == "agentteams":
+        return _audit_agentteams(args, cfg, store, run_id, target)
 
+    try:
+        if _begin_audit(store, run_id, target, cfg) is None:
+            return SYSTEM_ERROR
         store.transition(run_id, "PREFLIGHT", "SNAPSHOTTING")
         snapshot, coverage = SnapshotBuilder().build(target)
         store.save_run(run_id, snapshot_id=snapshot.snapshot_id,
@@ -163,6 +198,70 @@ def _cmd_audit(args) -> int:
         return SYSTEM_ERROR
     finally:
         store.close()
+
+
+def _audit_agentteams(args, cfg, store, run_id: int, target: Path) -> int:
+    """Formal headless audit on real AgentTeams Workers and typed Tasks."""
+    from core.workspace_snapshot import WorkspaceSnapshotBuilder
+    from agentteams.hiclaw_client import HiclawClient
+    from agentteams.project_driver import ProjectDriver
+    from agentteams.worker_payloads import SnapshotReference
+
+    if _begin_audit(store, run_id, target, cfg) is None:
+        return SYSTEM_ERROR
+    store.transition(run_id, "PREFLIGHT", "SNAPSHOTTING")
+    archive = Path(".argus") / "snapshots" / f"{run_id}.zip"
+    bundle = WorkspaceSnapshotBuilder().build(target, archive)
+    snapshot_ref = SnapshotReference(
+        snapshot_id=bundle.snapshot.snapshot_id,
+        source_root="/root/hiclaw-fs/shared",
+        files=[
+            {"path": f.path, "sha256": f.sha256, "size": f.size,
+             "language": f.language} for f in bundle.snapshot.files
+        ],
+        archive_sha256=bundle.archive_sha256,
+    )
+
+    store.transition(run_id, "SNAPSHOTTING", "SCHEDULED")
+    store.transition(run_id, "SCHEDULED", "RUNNING")
+    client = HiclawClient()
+    driver = ProjectDriver(client, Path.cwd())
+    request = {"project_id": f"argus-run-{run_id}", "run_id": f"run-{run_id}"}
+    outcome = driver.run(request, snapshot_ref,
+                         profile="phase-one-acceptance",
+                         acceptance_probe=None)
+    store.save_run(run_id, gate=outcome.gate)
+    print(f"[argus] project={outcome.project_id} status={outcome.status} "
+          f"gate={outcome.gate}")
+    if outcome.status != "completed":
+        store.transition(run_id, "RUNNING", "PARTIAL")
+        return SYSTEM_ERROR
+    for path in outcome.report_paths:
+        print(f"[argus] report={path}")
+    store.transition(run_id, "RUNNING", "META_REVIEW")
+    store.transition(run_id, "META_REVIEW", "SYNTHESIZING")
+    store.transition(run_id, "SYNTHESIZING", "COMPLETED")
+    return EXIT.get(outcome.gate, EXIT["unknown"])
+
+
+def _cmd_acceptance(args) -> int:
+    if args.acceptance_cmd == "phase-one":
+        from acceptance.phase_one import run_phase_one
+        report = run_phase_one(
+            target=Path(args.target),
+            workspace_mode=args.workspace_mode,
+            agentteams_live=args.agentteams_live,
+            acceptance_probe=args.acceptance_probe,
+            leakage_e2e=args.leakage_e2e,
+        )
+        print(f"[argus] phase_one={report.phase_one} accepted={report.accepted}")
+        return 0 if report.accepted else SYSTEM_ERROR
+    if args.acceptance_cmd == "cleanup":
+        from acceptance.cleanup import run_cleanup
+        removed = run_cleanup(args.run_id)
+        print(f"[argus] cleanup removed {len(removed)} resources")
+        return 0
+    return SYSTEM_ERROR
 
 
 def _change_from_file(sf) -> Change:
