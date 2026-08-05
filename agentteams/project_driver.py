@@ -11,7 +11,7 @@ import hashlib
 import json
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from agentteams.hiclaw_client import HiclawClient, HiclawError
@@ -23,6 +23,9 @@ from agentteams.worker_payloads import (
 )
 
 ASSESSOR_ROLES = ("dep", "code", "sec", "delivery")
+PROJECT_WORKERS = tuple(
+    f"argus-{role}" for role in (*ASSESSOR_ROLES, "meta", "synth")
+)
 TERMINAL_OK = {TaskState.COMPLETED.value}
 REVISION_LIMIT = 2
 
@@ -39,7 +42,7 @@ class ProjectOutcome:
 
 class ProjectDriver:
     def __init__(self, client: HiclawClient, workspace: Path,
-                 *, ack_timeout_s: int = 60, run_timeout_s: int = 300):
+                 *, ack_timeout_s: int = 60, run_timeout_s: int = 600):
         self.client = client
         self.workspace = Path(workspace).resolve()
         self.ack_timeout_s = ack_timeout_s
@@ -80,8 +83,9 @@ class ProjectDriver:
                 f"generation={generation!r} digest={digest!r}")
         return generation, digest
 
-    def _register_task(self, project_id: str, task_id: str, worker: str,
-                       kind: str, skill: str, snapshot: SnapshotReference,
+    def _register_task(self, project_id: str, room_id: str, task_id: str,
+                       worker: str, kind: str, skill: str,
+                       snapshot: SnapshotReference,
                        input_payload: dict, deadline_offset_s: int = 600,
                        required: bool = True) -> dict:
         from datetime import datetime, timedelta, timezone
@@ -90,7 +94,7 @@ class ProjectDriver:
             "schema_version": "1",
             "task_id": task_id,
             "project_id": project_id,
-            "room_id": "",
+            "room_id": room_id,
             "assigned_worker": worker,
             "kind": kind,
             "attempt": 1,
@@ -111,6 +115,25 @@ class ProjectDriver:
         # Compute the same idempotency key the Controller will require.
         envelope["idempotency_key"] = self._idempotency_key(envelope)
         return self.client.register_task(envelope)
+
+    def _publish_snapshot(self, project_id: str,
+                          snapshot: SnapshotReference) -> None:
+        archive = Path(snapshot.archive_path).resolve()
+        if not archive.is_file():
+            raise HiclawError(f"snapshot archive missing: {archive}")
+        actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+        expected = snapshot.archive_sha256.removeprefix("sha256:")
+        if actual != expected:
+            raise HiclawError(
+                "snapshot archive digest mismatch: "
+                f"expected={expected} actual={actual}")
+        self.client.publish_shared_file(
+            f"projects/{project_id}/snapshot.zip", archive)
+        self.client.publish_shared_text(
+            f"projects/{project_id}/snapshot.id",
+            json.dumps({"snapshot_id": snapshot.snapshot_id,
+                        "archive_sha256": snapshot.archive_sha256}),
+        )
 
     def _idempotency_key(self, envelope: dict) -> str:
         parts = [
@@ -150,23 +173,31 @@ class ProjectDriver:
             profile: str = "", acceptance_probe: dict | None = None) -> ProjectOutcome:
         project_id = request.get("project_id") or f"argus-{uuid.uuid4().hex[:12]}"
         run_id = request.get("run_id", project_id)
+        title = request.get("title") or f"Argus audit {run_id}"
         task_states: dict[str, str] = {}
         artifacts: list[dict] = []
 
-        # Publish the snapshot bundle to shared storage for Workers.
-        self.client.publish_shared_text(
-            f"projects/{project_id}/snapshot.id",
-            json.dumps({"snapshot_id": snapshot.snapshot_id,
-                        "archive_sha256": snapshot.archive_sha256}))
-        self.client.sync_shared_directory(f"projects/{project_id}")
+        project = self.client.create_project(project_id, title, PROJECT_WORKERS)
+        room_id = project.get("project_room_id")
+        if not isinstance(room_id, str) or not room_id:
+            raise HiclawError("AgentTeams project has no Project Room")
+        # Point the assessor Skills at the per-project snapshot directory the
+        # typed executor will extract the archive into, so they never read
+        # unextracted or colliding files from the shared root.
+        snapshot = replace(
+            snapshot,
+            source_root=f"/root/hiclaw-fs/shared/projects/{project_id}/snapshot",
+        )
+        self._publish_snapshot(project_id, snapshot)
 
         for role in ASSESSOR_ROLES:
             task_id = f"{project_id}-assessor-{role}"
             skill = ROLE_SKILLS[role]
             payload = assessor_payload(role, run_id, snapshot, registry,
                                        profile, acceptance_probe if role == "code" else None)
-            self._register_task(project_id, task_id, self._worker_for(role),
-                                "assess", skill, snapshot, payload)
+            self._register_task(
+                project_id, room_id, task_id, self._worker_for(role),
+                "assess", skill, snapshot, payload)
             record = self._dispatch_and_wait(task_id)
             task_states[task_id] = record["state"]
             artifact = self._artifact(task_id)
@@ -183,7 +214,7 @@ class ProjectDriver:
             artifacts.append(artifact)
 
         meta_id = f"{project_id}-meta"
-        self._register_task(project_id, meta_id, "argus-meta", "meta",
+        self._register_task(project_id, room_id, meta_id, "argus-meta", "meta",
                             "argus-evidence-verify", snapshot,
                             meta_payload(run_id, snapshot, artifacts))
         meta_record = self._dispatch_and_wait(meta_id)
@@ -197,14 +228,14 @@ class ProjectDriver:
         hallucinated = [d for d in decisions if d.get("label") == "HALLUCINATION"]
         if hallucinated:
             revision_outcome = self._revision_loop(
-                project_id, task_states, snapshot, decisions, artifacts)
+                project_id, room_id, task_states, snapshot, decisions, artifacts)
             if revision_outcome is not None:
                 return revision_outcome
 
         synth_id = f"{project_id}-synth"
         policy = {"require_quality_label": "VERIFIED", "min_confidence": 0.8,
                   "block_on": ["critical", "high"]}
-        self._register_task(project_id, synth_id, "argus-synth", "synth",
+        self._register_task(project_id, room_id, synth_id, "argus-synth", "synth",
                             "argus-release-policy-evaluate", snapshot,
                             synth_payload(run_id, snapshot, artifacts, decisions, policy))
         synth_record = self._dispatch_and_wait(synth_id)
@@ -216,7 +247,7 @@ class ProjectDriver:
                                   error="synth task failed or artifact missing")
 
         report_id = f"{project_id}-report"
-        self._register_task(project_id, report_id, "argus-synth", "report",
+        self._register_task(project_id, room_id, report_id, "argus-synth", "report",
                             "argus-report-materialize", snapshot,
                             synth_payload(run_id, snapshot, artifacts, decisions, policy),
                             required=True)
@@ -229,13 +260,15 @@ class ProjectDriver:
             gate=synth_artifact.get("release_gate", "unknown"),
             report_paths=[f"tasks/{report_id}/result.md"])
 
-    def _revision_loop(self, project_id: str, task_states: dict,
-                       snapshot: SnapshotReference, decisions: list[dict],
+    def _revision_loop(self, project_id: str, room_id: str,
+                       task_states: dict, snapshot: SnapshotReference,
+                       decisions: list[dict],
                        artifacts: list[dict]) -> ProjectOutcome | None:
         for _ in range(REVISION_LIMIT):
             revision_id = f"{project_id}-revision-{int(time.time())}"
-            self._register_task(project_id, revision_id, "argus-meta", "revision",
-                                "argus-evidence-verify", snapshot,
+            self._register_task(
+                project_id, room_id, revision_id, "argus-meta", "revision",
+                "argus-evidence-verify", snapshot,
                                 meta_payload(project_id, snapshot, artifacts))
             record = self._dispatch_and_wait(revision_id)
             task_states[revision_id] = record["state"]

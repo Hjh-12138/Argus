@@ -413,6 +413,30 @@ cp "$tmp" "$1"
             input_text=content, timeout=60,
         )
 
+    def publish_shared_file(self, relative_path: str,
+                            source_path: Path) -> None:
+        """Publish exact binary bytes to MinIO and the Manager mirror."""
+        relative = self._shared_relative(relative_path)
+        source = Path(source_path).resolve()
+        if not source.is_file():
+            raise HiclawError(f"shared source file does not exist: {source}")
+        local = self.SHARED_ROOT / relative
+        remote = f"{self.STORAGE_ROOT}/{relative.as_posix()}"
+        encoded = base64.b64encode(source.read_bytes()).decode("ascii")
+        script = r'''
+set -eu
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+base64 -d > "$tmp"
+mc cp "$tmp" "$2" >/dev/null
+mkdir -p "$(dirname "$1")"
+cp "$tmp" "$1"
+'''.strip()
+        self._docker_exec(
+            "sh", "-c", script, "argus-publish-file", str(local), remote,
+            input_text=encoded, timeout=120,
+        )
+
     def read_shared_text(self, relative_path: str, *, refresh: bool = False) -> str:
         relative = self._shared_relative(relative_path)
         local = self.SHARED_ROOT / relative

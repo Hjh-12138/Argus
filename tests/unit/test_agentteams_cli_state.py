@@ -36,11 +36,14 @@ class _FakeClient:
 
 
 class _FakeDriver:
+    last_snapshot = None
+
     def __init__(self, *args, **kwargs):
         self.calls = []
 
     def run(self, request, snapshot, profile="", acceptance_probe=None, **kwargs):
         from agentteams.project_driver import ProjectOutcome
+        type(self).last_snapshot = snapshot
         return ProjectOutcome(project_id=request["project_id"], status="completed",
                               gate="block", report_paths=["tasks/p/report/result.md"],
                               task_states={})
@@ -69,6 +72,16 @@ def test_agentteams_audit_uses_legal_state_prefix(tmp_path):
         exit_code = _run_agentteams_audit(tmp_path)
 
     assert exit_code == 2  # block gate
+
+
+def test_agentteams_audit_passes_built_archive_path(tmp_path):
+    with mock.patch("core.workspace_snapshot.WorkspaceSnapshotBuilder",
+                    _FakeWorkspaceBuilder), \
+         mock.patch("agentteams.hiclaw_client.HiclawClient", _FakeClient), \
+         mock.patch("agentteams.project_driver.ProjectDriver", _FakeDriver):
+        _run_agentteams_audit(tmp_path)
+
+    assert _FakeDriver.last_snapshot.archive_path.endswith(".zip")
 
 
 def test_state_machine_rejects_created_to_snapshotting(tmp_path):

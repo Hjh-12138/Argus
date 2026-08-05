@@ -215,10 +215,11 @@ def _audit_agentteams(args, cfg, store, run_id: int, target: Path) -> int:
     snapshot_ref = SnapshotReference(
         snapshot_id=bundle.snapshot.snapshot_id,
         source_root="/root/hiclaw-fs/shared",
-        files=[
+        files=tuple(
             {"path": f.path, "sha256": f.sha256, "size": f.size,
              "language": f.language} for f in bundle.snapshot.files
-        ],
+        ),
+        archive_path=str(archive.resolve()),
         archive_sha256=bundle.archive_sha256,
     )
 
