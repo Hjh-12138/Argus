@@ -228,8 +228,13 @@ def _audit_agentteams(args, cfg, store, run_id: int, target: Path) -> int:
     client = HiclawClient()
     driver = ProjectDriver(client, Path.cwd())
     request = {"project_id": f"argus-run-{run_id}", "run_id": f"run-{run_id}"}
+    # The dependency assessor only produces findings when the registry
+    # fixture travels in its input payload; without it every manifest entry
+    # is "unverified" and the vulnerable demo passes with zero findings.
+    registry = _load_registry(getattr(args, "registry_fixture", None))
     try:
         outcome = driver.run(request, snapshot_ref,
+                             registry=registry,
                              profile="phase-one-acceptance",
                              acceptance_probe=None)
     except HiclawError as exc:

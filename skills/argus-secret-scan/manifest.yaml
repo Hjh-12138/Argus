@@ -1,21 +1,20 @@
-name: argus-release-policy-evaluate
+name: argus-secret-scan
 version: 0.1.0
 owner: argus
+license: Apache-2.0
+category: assessor
+purpose: Deterministic headless assessor Skill that scans the immutable source snapshot.
 execution:
   command: ["python", "implementation/main.py"]
   input: json-file
   output: json-file
   timeoutSeconds: 60
-license: Apache-2.0
-category: policy
-purpose: Compute deterministic release gate from Meta-verified findings.
 input_schema: schemas/input.schema.json
 output_schema: schemas/output.schema.json
 error_schema: schemas/error.schema.json
-permissions: [reviewed_result.read, policy.execute]
+permissions:
+  - snapshot.read
+  - own_task_artifact.write
 network: none
-timeout_seconds: 5
-retry: none
 idempotency: input_digest
-cancellation: atomic
-reusable_by: [synth]
+reusable_by: [argus]

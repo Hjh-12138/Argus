@@ -1,39 +1,65 @@
 {
-  "schema_version": "1",
-  "locked_at": "2026-08-02",
+  "schema_version": "2",
+  "source": "nacos://nacos:8848/public",
+  "auth_type": "nacos",
+  "locked_at": "2026-08-04T09:55:13.003707+00:00Z",
   "skills": [
     {
-      "name": "argus-evidence-verify",
-      "version": "0.1.0",
-      "sha256": "b134af18f0ede5fd3e8ca8a4a2391bc8197574182372810a8ea36736ff0b0441"
+      "name": "argus-dependency-inspect",
+      "version": "0.0.1",
+      "local_sha256": "75589a59896d42a68f41c7824661e7f0e960401ab17c548cba0f4796f798284d"
+    },
+    {
+      "name": "argus-code-rule-scan",
+      "version": "0.0.1",
+      "local_sha256": "1a21b5b8be2337b8718335051fdb5ed0a9aadf70e742baef4895a327c941bd44"
+    },
+    {
+      "name": "argus-secret-scan",
+      "version": "0.0.1",
+      "local_sha256": "574c842e2a56e1f48df542bf9de25db6adb0d94aa422027a6b4f737011953b63"
+    },
+    {
+      "name": "argus-ci-policy-check",
+      "version": "0.0.1",
+      "local_sha256": "225abdd93aa33892b0c6196ed195161c2debbc00d96124d8d1965480a84f0bd9"
     },
     {
       "name": "argus-finding-emit",
-      "version": "0.1.0",
-      "sha256": "7f8500fe9a816c13922af42238e23bf9a85a2306711ee03faaca3e1e80686c82"
+      "version": "0.0.1",
+      "local_sha256": "136e278952ccaa5d7acf44747bfae53d59bf49e36aa1a9a11bd92fc072c2b1dc"
+    },
+    {
+      "name": "argus-evidence-verify",
+      "version": "0.0.1",
+      "local_sha256": "753ff49e7364011c2035bedc240dc65c7d82dd15e653f715a7dba973a46011b5"
     },
     {
       "name": "argus-release-policy-evaluate",
-      "version": "0.1.0",
-      "sha256": "fde1a3a43c7048c1a5f2ca09311272cf11705fa4b7aafedab8edb7ae7adcfddd"
+      "version": "0.0.1",
+      "local_sha256": "6897e27db0c0b97c9a7b94dc9c9cb501d7457cd78f1790adc33198fc0fd41209"
     },
     {
       "name": "argus-report-materialize",
-      "version": "0.1.0",
-      "sha256": "96b830ba035a91443773d5e3d8c5ee001837641ac34ca5a90e80445f84bfd596"
+      "version": "0.0.1",
+      "local_sha256": "27830495d777c483db132e42655af2c09cf865930592a628fe6738977bbf521c"
     }
   ],
   "assignments": {
     "argus-dep": [
+      "argus-dependency-inspect",
       "argus-finding-emit"
     ],
     "argus-code": [
+      "argus-code-rule-scan",
       "argus-finding-emit"
     ],
     "argus-sec": [
+      "argus-secret-scan",
       "argus-finding-emit"
     ],
     "argus-delivery": [
+      "argus-ci-policy-check",
       "argus-finding-emit"
     ],
     "argus-meta": [

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "error_code", "error_message"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "status": {"const": "failed"},
+    "error_code": {"type": "string"},
+    "error_message": {"type": "string"}
+  }
+}
