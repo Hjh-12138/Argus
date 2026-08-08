@@ -398,7 +398,81 @@ class Orchestrator:
             project_meta["completed_at"] = _now()
             self._write_json(
                 f"projects/{project_meta['project_id']}/meta.json", project_meta)
+            self._update_project_index(project_meta)
+            self._write_project_snapshot(project_meta)
+            self.isolate_worker_context(project_meta["project_id"], "exit")
             self.client.sync_shared_directory(f"projects/{project_meta['project_id']}")
+
+    # ── Project index & snapshot ──────────────────────────────────────
+
+    def _update_project_index(self, project_meta: dict) -> None:
+        """Append completed project metadata to the global project index."""
+        pid = project_meta["project_id"]
+        entry = {
+            "project_id": pid,
+            "title": project_meta.get("title", ""),
+            "run_id": project_meta.get("run_id", ""),
+            "completed_at": project_meta.get("completed_at", _now()),
+            "status": project_meta.get("status", "completed"),
+        }
+        # Read task outcomes
+        tasks_summary = {}
+        for task_id in project_meta.get("tasks", []):
+            try:
+                task = self._read_json(f"tasks/{task_id}/meta.json")
+                tasks_summary[task_id] = {
+                    "status": task.get("status", "unknown"),
+                    "agent": task.get("agent", ""),
+                    "kind": task.get("kind", ""),
+                }
+            except (HiclawError, OSError):
+                tasks_summary[task_id] = {"status": "unknown"}
+        entry["tasks"] = tasks_summary
+
+        # Try to read synth result for finding count
+        try:
+            synth_id = f"{pid}-synth"
+            report = self._read_json(f"tasks/{synth_id}/artifacts/result.json")
+            entry["release_gate"] = report.get("release_gate", "unknown")
+        except (HiclawError, OSError):
+            entry["release_gate"] = "unknown"
+
+        # Append to index
+        index_path = "projects/_index.json"
+        index = []
+        try:
+            index = json.loads(self.client.read_shared_text(index_path) or "[]")
+        except (json.JSONDecodeError, HiclawError):
+            pass
+        index.append(entry)
+        self._publish_json(index_path, index)
+
+    def _write_project_snapshot(self, project_meta: dict) -> None:
+        """Generate an immutable project snapshot for fast resume."""
+        pid = project_meta["project_id"]
+        snapshot = {
+            "schema_version": "1",
+            "project_id": pid,
+            "completed_at": project_meta.get("completed_at", _now()),
+            "run_id": project_meta.get("run_id", ""),
+            "snapshot_id": project_meta.get("snapshot_id", ""),
+            "workers": project_meta.get("workers", []),
+            "findings_summary": {},
+            "resume_hint": "Read projects/<id>/meta.json and tasks/*/meta.json to restore state.",
+        }
+        # Collect findings count per task
+        total_findings = 0
+        for task_id in project_meta.get("tasks", []):
+            try:
+                result = self._read_json(f"tasks/{task_id}/artifacts/result.json")
+                findings = result.get("findings", [])
+                snapshot["findings_summary"][task_id] = len(findings)
+                total_findings += len(findings)
+            except (HiclawError, OSError):
+                snapshot["findings_summary"][task_id] = 0
+        snapshot["total_findings"] = total_findings
+
+        self._publish_json(f"projects/{pid}/snapshot.json", snapshot)
 
     def _create_revision(self, project_meta: dict, trigger_meta: dict,
                          target_task_id: str) -> None:
