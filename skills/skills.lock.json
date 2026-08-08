@@ -32,7 +32,7 @@
     {
       "name": "argus-evidence-verify",
       "version": "0.0.1",
-      "local_sha256": "b134af18f0ede5fd3e8ca8a4a2391bc8197574182372810a8ea36736ff0b0441"
+      "local_sha256": "75c1b935ab5e908b9802c5053fa8cba0f05e1d8dccace03dc35e7f4588ac1300"
     },
     {
       "name": "argus-release-policy-evaluate",
@@ -42,7 +42,7 @@
     {
       "name": "argus-report-materialize",
       "version": "0.0.1",
-      "local_sha256": "96b830ba035a91443773d5e3d8c5ee001837641ac34ca5a90e80445f84bfd596"
+      "local_sha256": "f611116e10faa63a58a11bbacf72008f70c0b240bef226173442e334e7d81a91"
     }
   ],
   "assignments": {

@@ -80,6 +80,46 @@ class Orchestrator:
         self.model = model or self._locked_model()
         self.runtime = runtime
 
+    # ── Cross-project context isolation ─────────────────────────────────
+
+    def isolate_worker_context(self, project_id: str, action: str) -> None:
+        """Archive or restore Worker memory at project boundaries.
+
+        ``action`` must be ``"enter"`` or ``"exit"``.
+
+        On enter: writes ``memory/current-project.md`` declaring the active
+        project so Workers can scope their LLM context.
+
+        On exit: copies each Worker's ``memory/`` into the project archive
+        under ``projects/<id>/worker-memory/<worker>/`` and removes the
+        ``current-project.md`` marker.
+        """
+        if action not in ("enter", "exit"):
+            raise ValueError(f"isolate_worker_context: action must be 'enter' or 'exit', got {action!r}")
+        for worker_def in WORKERS.values():
+            worker = worker_def.name
+            prefix = f"agents/{worker}"
+            if action == "exit":
+                try:
+                    self.client.sync_shared_directory(
+                        f"{prefix}/memory/",
+                        f"projects/{project_id}/worker-memory/{worker}/")
+                except HiclawError:
+                    pass
+                try:
+                    self.client.write_shared_text(
+                        f"{prefix}/memory/current-project.md", "")
+                except HiclawError:
+                    pass
+            else:  # enter
+                try:
+                    self.client.write_shared_text(
+                        f"{prefix}/memory/current-project.md",
+                        f"# Active Project\nproject_id: {project_id}\n"
+                        f"created_at: {_now()}\n")
+                except HiclawError:
+                    pass
+
     def run_audit(self, request: dict) -> str:
         normalized = self._validate_request(request)
         scheduled = tuple(normalized["agents"])
@@ -87,6 +127,7 @@ class Orchestrator:
         self.ensure_core_workers()
 
         project_id = normalized.get("project_id") or f"argus-{uuid.uuid4().hex[:12]}"
+        self.isolate_worker_context(project_id, "enter")
         title = normalized.get("title") or f"Argus audit {normalized['run_id']}"
         worker_names = [WORKERS[a].name for a in participating]
         project = self.client.create_project(project_id, title, worker_names)

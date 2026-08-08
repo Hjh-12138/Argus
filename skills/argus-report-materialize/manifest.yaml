@@ -4,7 +4,11 @@ owner: argus
 license: Apache-2.0
 category: report
 purpose: Atomically materialize schema-valid JSON and Markdown audit reports.
-entrypoint: implementation.main:invoke
+execution:
+  command: ["python", "implementation/main.py"]
+  input: json-file
+  output: json-file
+  timeoutSeconds: 30
 input_schema: schemas/input.schema.json
 output_schema: schemas/output.schema.json
 error_schema: schemas/error.schema.json
