@@ -7,22 +7,22 @@
     {
       "name": "argus-dependency-inspect",
       "version": "0.0.1",
-      "local_sha256": "75589a59896d42a68f41c7824661e7f0e960401ab17c548cba0f4796f798284d"
+      "local_sha256": "a0c36a9eced0d347bbcb7d4e3a92ca27788e0f2aef5559bcddf61f8245f32db3"
     },
     {
       "name": "argus-code-rule-scan",
       "version": "0.0.1",
-      "local_sha256": "1a21b5b8be2337b8718335051fdb5ed0a9aadf70e742baef4895a327c941bd44"
+      "local_sha256": "e3a606e3cecf909ec042c7e1b22449b0178c7bda3e27c731c3fa1767633b5337"
     },
     {
       "name": "argus-secret-scan",
       "version": "0.0.1",
-      "local_sha256": "574c842e2a56e1f48df542bf9de25db6adb0d94aa422027a6b4f737011953b63"
+      "local_sha256": "aad07cc2492f3524253d8ed5d8b76705371672f826c480ea6dd4170540cb559b"
     },
     {
       "name": "argus-ci-policy-check",
       "version": "0.0.1",
-      "local_sha256": "225abdd93aa33892b0c6196ed195161c2debbc00d96124d8d1965480a84f0bd9"
+      "local_sha256": "7298f0618946649e1545fb526a35f8c1a07c659c8f50a7904c8fb4c0d327fd16"
     },
     {
       "name": "argus-finding-emit",

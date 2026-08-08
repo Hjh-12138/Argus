@@ -16,6 +16,17 @@ import re
 import sys
 from pathlib import Path
 
+# Make _shared/llm_review importable from the skill sandbox
+_skill_dir = Path(__file__).resolve().parent.parent
+_shared_dir = _skill_dir.parent / "_shared"
+if _shared_dir.is_dir():
+    sys.path.insert(0, str(_shared_dir))
+try:
+    from llm_review import review_finding  # type: ignore
+    _LLM_AVAILABLE = True
+except ImportError:
+    _LLM_AVAILABLE = False
+
 _MANIFEST_PARSERS = {
     "pyproject.toml": "pyproject",
     "requirements.txt": "requirements",
@@ -63,6 +74,30 @@ def _parse(text: str, parser: str):
                 yield match.group(1), match.group(2)
 
 
+def _llm_review_findings(findings: list, source_root: Path) -> list:
+    """Optionally run LLM deep review on findings."""
+    if not (_LLM_AVAILABLE and findings):
+        return findings
+    reviewed = []
+    for f in findings:
+        ctx = ""
+        fp = source_root / f.get("file", "")
+        if fp.exists():
+            lines = fp.read_text(encoding="utf-8", errors="replace").splitlines()
+            lo = max(0, f.get("line_start", 1) - 5)
+            hi = min(len(lines), f.get("line_end", f.get("line_start", 1)) + 5)
+            ctx = "\n".join(f"{i+1}: {l}" for i, l in enumerate(lines[lo:hi], start=lo))
+        review = review_finding(f, ctx)
+        f["llm_review"] = review
+        if review["verdict"] == "NO":
+            f["confidence"] = max(0.1, f["confidence"] * 0.3)
+            f["llm_suppressed"] = True
+        elif review["verdict"] == "YES":
+            f["confidence"] = min(1.0, f["confidence"] * 1.2)
+        reviewed.append(f)
+    return reviewed
+
+
 def invoke(payload: dict) -> dict:
     source_root = Path(payload["source_root"])
     registry = payload.get("registry", {}) or {}
@@ -99,7 +134,7 @@ def invoke(payload: dict) -> dict:
                 })
     return {"schema_version": "1", "status": "completed", "agent": "dep",
             "input_snapshot_id": payload.get("snapshot_id", ""),
-            "findings": findings}
+            "findings": _llm_review_findings(findings, source_root)}
 
 
 def main(argv: list[str] | None = None) -> int:

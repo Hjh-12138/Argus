@@ -15,6 +15,6 @@ error_schema: schemas/error.schema.json
 permissions:
   - snapshot.read
   - own_task_artifact.write
-network: none
+network: true  # AI Gateway access for LLM deep review
 idempotency: input_digest
 reusable_by: [argus]

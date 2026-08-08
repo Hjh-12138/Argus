@@ -14,6 +14,16 @@ import re
 import sys
 from pathlib import Path
 
+_skill_dir = Path(__file__).resolve().parent.parent
+_shared_dir = _skill_dir.parent / "_shared"
+if _shared_dir.is_dir():
+    sys.path.insert(0, str(_shared_dir))
+try:
+    from llm_review import review_finding  # type: ignore
+    _LLM_AVAILABLE = True
+except ImportError:
+    _LLM_AVAILABLE = False
+
 _SOURCE_EXTS = (".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".rs")
 _PLACEHOLDER = re.compile(
     r"(?i)(TODO\s*:?\s*implement|FIXME\s*:?\s*implement|"
@@ -30,6 +40,29 @@ def _fingerprint(raw: str) -> str:
 def _redact(text: str) -> str:
     return re.sub(r"(?i)\b(sk-[A-Za-z0-9_-]{8,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,})\b",
                   "[REDACTED]", text)
+
+
+def _llm_review_findings(findings: list, source_root: Path) -> list:
+    if not (_LLM_AVAILABLE and findings):
+        return findings
+    reviewed = []
+    for f in findings:
+        ctx = ""
+        fp = source_root / f.get("file", "")
+        if fp.exists():
+            lines = fp.read_text(encoding="utf-8", errors="replace").splitlines()
+            lo = max(0, f.get("line_start", 1) - 5)
+            hi = min(len(lines), f.get("line_end", f.get("line_start", 1)) + 5)
+            ctx = "\n".join(f"{i+1}: {l}" for i, l in enumerate(lines[lo:hi], start=lo))
+        review = review_finding(f, ctx)
+        f["llm_review"] = review
+        if review["verdict"] == "NO":
+            f["confidence"] = max(0.1, f["confidence"] * 0.3)
+            f["llm_suppressed"] = True
+        elif review["verdict"] == "YES":
+            f["confidence"] = min(1.0, f["confidence"] * 1.2)
+        reviewed.append(f)
+    return reviewed
 
 
 def invoke(payload: dict) -> dict:
@@ -84,7 +117,7 @@ def invoke(payload: dict) -> dict:
 
     return {"schema_version": "1", "status": "completed", "agent": "code",
             "input_snapshot_id": payload.get("snapshot_id", ""),
-            "findings": findings}
+            "findings": _llm_review_findings(findings, source_root)}
 
 
 def main(argv: list[str] | None = None) -> int:

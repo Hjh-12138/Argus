@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""argus-secret-scan: standalone security auditor.
+"""argus-secret-scan: standalone security auditor with optional LLM deep review.
 
-No host imports. Detects SQL injection and hardcoded secrets. Raw secret
-values never appear in output — only redacted display and an HMAC token.
+Detects SQL injection and hardcoded secrets via deterministic regex/AST.
+Optionally calls the AI Gateway for semantic review to reduce false positives.
+Raw secret values never appear in output — only redacted display and HMAC token.
 """
 from __future__ import annotations
 
@@ -10,9 +11,22 @@ import argparse
 import hashlib
 import hmac
 import json
+import os
 import re
 import sys
 from pathlib import Path
+
+# Make _shared/llm_review importable from the skill sandbox
+_skill_dir = Path(__file__).resolve().parent.parent
+_shared_dir = _skill_dir.parent / "_shared"
+if _shared_dir.is_dir():
+    sys.path.insert(0, str(_shared_dir))
+
+try:
+    from llm_review import review_finding  # type: ignore[import-untyped]
+    _LLM_AVAILABLE = True
+except ImportError:
+    _LLM_AVAILABLE = False
 
 _SOURCE_EXTS = (".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".sql")
 _SQL_KEYWORD = re.compile(r"(?i)\b(select|insert|update|delete)\b")
@@ -40,6 +54,7 @@ def _redact(text: str) -> str:
 
 def invoke(payload: dict) -> dict:
     source_root = Path(payload["source_root"])
+    use_llm = payload.get("llm_review", True) and _LLM_AVAILABLE
     findings = []
     for sf in payload.get("files", []):
         if not sf["path"].endswith(_SOURCE_EXTS):
@@ -47,6 +62,30 @@ def invoke(payload: dict) -> dict:
         text = (source_root / sf["path"]).read_text(encoding="utf-8", errors="replace")
         findings.extend(_sql_injection(sf, text))
         findings.extend(_secret(sf, text))
+
+    # LLM deep review: filter false positives via AI Gateway
+    if use_llm and findings:
+        reviewed = []
+        for f in findings:
+            file_path = source_root / f["file"]
+            ctx = ""
+            if file_path.exists():
+                lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                lo = max(0, f.get("line_start", 1) - 5)
+                hi = min(len(lines), f.get("line_end", f.get("line_start", 1)) + 5)
+                ctx = "\n".join(
+                    f"{i+1}: {line}"
+                    for i, line in enumerate(lines[lo:hi], start=lo))
+            review = review_finding(f, ctx)
+            f["llm_review"] = review
+            if review["verdict"] == "NO":
+                f["confidence"] = max(0.1, f["confidence"] * 0.3)
+                f["llm_suppressed"] = True
+            elif review["verdict"] == "YES":
+                f["confidence"] = min(1.0, f["confidence"] * 1.2)
+            reviewed.append(f)
+        findings = reviewed
+
     return {"schema_version": "1", "status": "completed", "agent": "sec",
             "input_snapshot_id": payload.get("snapshot_id", ""),
             "findings": findings}
