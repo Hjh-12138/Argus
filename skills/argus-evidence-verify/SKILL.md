@@ -1,3 +1,7 @@
+---
+name: argus-evidence-verify
+description: Independently verify Finding path, line, hash, evidence, and actionability
+---
 # argus-evidence-verify
 
 独立验证 Agent finding 的 path、line、source hash、evidence 与 actionability，输出 `MetaDecision`。

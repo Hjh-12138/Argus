@@ -1,3 +1,7 @@
+---
+name: argus-finding-emit
+description: Convert structured detector observations into schema-valid audit Findings
+---
 # argus-finding-emit
 
 将 detector 的结构化观察转换为符合 `Finding` 契约的审计结果。

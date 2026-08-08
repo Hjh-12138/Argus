@@ -1,3 +1,7 @@
+---
+name: argus-report-materialize
+description: Atomically materialize schema-valid audit reports from immutable decisions
+---
 # argus-report-materialize
 
 将不可变 PolicyDecision、MetaDecision 和 AgentResult 原子物化为 `report.json` 与 `report.md`。
