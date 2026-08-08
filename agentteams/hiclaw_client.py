@@ -51,7 +51,7 @@ class HiclawClient:
     PROJECT_SCRIPT = "/opt/hiclaw/agent/skills/project-management/scripts/create-project.sh"
     SHARED_ROOT = PurePosixPath("/root/hiclaw-fs/shared")
     STORAGE_ROOT = "agentteams/agentteams-storage/shared"
-    ARGUS_WORKER_IMAGE = "agentteams/worker-agent:v1.2.0-beta.1-argus.2"
+    ARGUS_WORKER_IMAGE = "agentteams/worker-agent:v1.2.0-beta.1-argus.7"
 
     def __init__(self, container: str | None = None):
         self.container = container or self._detect_manager_container()
@@ -61,7 +61,7 @@ class HiclawClient:
         probe = subprocess.run(
             ["docker", "ps", "--format", "{{.Names}}"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=15,
+            timeout=60,
         )
         if probe.returncode == 0:
             names = set(probe.stdout.splitlines())
@@ -302,12 +302,15 @@ class HiclawClient:
         """Read the Worker's observed remote-Skill generation state."""
         self._validate_id(worker, "worker")
         container = f"agentteams-worker-{worker}"
-        raw = self._docker_exec_in(
-            container, "sh", "-c",
-            "[ -f /root/hiclaw-fs/agents/$1/.skills/observed.json ] && "
-            "cat /root/hiclaw-fs/agents/$1/.skills/observed.json || echo {}",
-            "argus-observed", worker, timeout=30,
-        )
+        try:
+            raw = self._docker_exec_in(
+                container, "sh", "-c",
+                "[ -f /root/hiclaw-fs/agents/$1/.skills/observed.json ] && "
+                "cat /root/hiclaw-fs/agents/$1/.skills/observed.json || echo {}",
+                "argus-observed", worker, timeout=30,
+            )
+        except HiclawError:
+            return {}
         try:
             return self._json_output(raw, "worker skill observation")
         except HiclawError:

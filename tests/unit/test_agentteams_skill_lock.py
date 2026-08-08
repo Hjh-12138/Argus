@@ -89,7 +89,7 @@ class WorkerRemoteSkillApplyTests(unittest.TestCase):
         self.assertEqual(1, len(payloads))
         self.assertIn("  skills: []\n", payloads[0])
         self.assertIn(
-            "  image: agentteams/worker-agent:v1.2.0-beta.1-argus.2\n",
+            "  image: agentteams/worker-agent:v1.2.0-beta.1-argus.7\n",
             payloads[0],
         )
 
