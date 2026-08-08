@@ -121,16 +121,12 @@ class Orchestrator:
                     pass
 
     def run_audit(self, request: dict) -> str:
-        """Delegate audit orchestration to the Manager Agent via Matrix DM.
+        """Run the full audit DAG.
 
-        The Manager (LLM) receives the audit request, plans the DAG, creates
-        the project, registers typed tasks, and dispatches workers. This method
-        only sends the initial request — all coordination happens in the Manager.
-
-        The legacy direct-dispatch path (run_audit_direct) is preserved for
-        automated testing where the Manager Agent may not be available.
+        Uses the direct dispatch path for now. When Manager Agent is fully
+        activated, switch to _run_audit_via_manager().
         """
-        return self._run_audit_via_manager(request)
+        return self.run_audit_direct(request)
 
     def _run_audit_via_manager(self, request: dict) -> str:
         """Send audit request to Manager Agent via admin DM room."""
