@@ -99,7 +99,9 @@ def _build_archive(skill: Path) -> bytes:
 class NacosClient:
     def __init__(self, host: str, port: int, identity_key: str,
                  identity_value: str, namespace: str = "public"):
-        self.base = f"http://{host}:{port}/nacos"
+        self.base = f"http://{host}:{port}"
+        self.v3_admin_base = f"{self.base}/nacos/v3/admin/ai/skills"
+        self.v3_client_base = f"{self.base}/nacos/v3/client/ai/skills"
         self.identity = {identity_key: identity_value}
         self.namespace = namespace
         self.token = ""
@@ -117,7 +119,7 @@ class NacosClient:
 
     def _request(self, method: str, path: str, data=None,
                  headers: dict | None = None, raw_errors: bool = False) -> dict:
-        url = self.base + path
+        url = path if path.startswith("http") else self.base + path
         request = urllib.request.Request(url, data=data, method=method)
         if self.token:
             # Token auth identifies the calling user for ownership checks.
@@ -155,7 +157,7 @@ class NacosClient:
         body.write(zip_bytes)
         body.write(f"\r\n--{boundary}--\r\n".encode())
         return self._request(
-            "POST", "/v3/admin/ai/skills/upload", body.getvalue(),
+            "POST", self.v3_admin_base + "/upload", body.getvalue(),
             headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
 
     def submit(self, name: str) -> dict:
@@ -164,7 +166,7 @@ class NacosClient:
             "namespaceId": self.namespace, "skillName": name,
         }).encode()
         return self._request(
-            "POST", "/v3/admin/ai/skills/submit", form,
+            "POST", self.v3_admin_base + "/submit", form,
             headers={"Content-Type": "application/x-www-form-urlencoded"})
 
     def publish(self, name: str, version: str) -> dict:
@@ -173,13 +175,13 @@ class NacosClient:
             "namespaceId": self.namespace, "skillName": name, "version": version,
         }).encode()
         return self._request(
-            "POST", "/v3/admin/ai/skills/publish", form,
+            "POST", self.v3_admin_base + "/publish", form,
             headers={"Content-Type": "application/x-www-form-urlencoded"})
 
     def get_version_detail(self, name: str) -> dict | None:
         """Return the reviewing version detail with pipeline status."""
         result = self._request(
-            "GET", "/v3/admin/ai/skills?skillName=" +
+            "GET", self.v3_admin_base + "?skillName=" +
             urllib.parse.quote(name) + "&namespaceId=" + urllib.parse.quote(self.namespace))
         versions = (result.get("data") or {}).get("versions") or []
         for version in versions:
@@ -203,7 +205,7 @@ class NacosClient:
         raise PublishError(f"publish pipeline not approved within {timeout_s}s for {name}")
 
     def fetch_skill(self, name: str, version: str) -> bytes:
-        url = self.base + "/v3/client/ai/skills?" + urllib.parse.urlencode({
+        url = self.v3_client_base + "?" + urllib.parse.urlencode({
             "namespaceId": self.namespace, "name": name, "version": version,
         })
         request = urllib.request.Request(url, method="GET")

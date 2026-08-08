@@ -27,12 +27,12 @@
     {
       "name": "argus-finding-emit",
       "version": "0.0.1",
-      "local_sha256": "136e278952ccaa5d7acf44747bfae53d59bf49e36aa1a9a11bd92fc072c2b1dc"
+      "local_sha256": "7f8500fe9a816c13922af42238e23bf9a85a2306711ee03faaca3e1e80686c82"
     },
     {
       "name": "argus-evidence-verify",
       "version": "0.0.1",
-      "local_sha256": "753ff49e7364011c2035bedc240dc65c7d82dd15e653f715a7dba973a46011b5"
+      "local_sha256": "b134af18f0ede5fd3e8ca8a4a2391bc8197574182372810a8ea36736ff0b0441"
     },
     {
       "name": "argus-release-policy-evaluate",
@@ -42,7 +42,7 @@
     {
       "name": "argus-report-materialize",
       "version": "0.0.1",
-      "local_sha256": "27830495d777c483db132e42655af2c09cf865930592a628fe6738977bbf521c"
+      "local_sha256": "96b830ba035a91443773d5e3d8c5ee001837641ac34ca5a90e80445f84bfd596"
     }
   ],
   "assignments": {
