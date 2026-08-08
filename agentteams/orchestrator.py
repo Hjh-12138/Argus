@@ -121,6 +121,51 @@ class Orchestrator:
                     pass
 
     def run_audit(self, request: dict) -> str:
+        """Delegate audit orchestration to the Manager Agent via Matrix DM.
+
+        The Manager (LLM) receives the audit request, plans the DAG, creates
+        the project, registers typed tasks, and dispatches workers. This method
+        only sends the initial request — all coordination happens in the Manager.
+
+        The legacy direct-dispatch path (run_audit_direct) is preserved for
+        automated testing where the Manager Agent may not be available.
+        """
+        return self._run_audit_via_manager(request)
+
+    def _run_audit_via_manager(self, request: dict) -> str:
+        """Send audit request to Manager Agent via admin DM room."""
+        normalized = self._validate_request(request)
+        run_id = normalized["run_id"]
+        focus = ", ".join(normalized["agents"])
+        project_id = normalized.get("project_id") or f"argus-{uuid.uuid4().hex[:12]}"
+
+        state_json = self.client._docker_exec(
+            "agentteams-manager",
+            "cat", "/root/manager-workspace/state.json")
+        state = json.loads(state_json) if isinstance(state_json, str) else json.loads(state_json.decode())
+        admin_room = state.get("admin_dm_room_id")
+        if not admin_room:
+            raise HiclawError("Manager admin DM room not found. Run Manager onboarding first.")
+
+        message = (
+            f"**New Audit Request**\n\n"
+            f"Run ID: `{run_id}`\n"
+            f"Project ID: `{project_id}`\n"
+            f"Title: {normalized.get('title', 'Untitled Audit')}\n"
+            f"Focus: {focus}\n"
+            f"Snapshot: `{normalized['snapshot_id']}`\n\n"
+            f"Please run `audit-orchestrate` to plan and dispatch."
+        )
+        self.client.send_project_message(admin_room, message)
+        self.isolate_worker_context(project_id, "enter")
+        return project_id
+
+    def run_audit_direct(self, request: dict) -> str:
+        """Legacy direct dispatch path — for automated testing.
+
+        Bypasses the Manager Agent and directly creates the project, registers
+        tasks, and dispatches to Workers via the argus-typed-task protocol.
+        """
         normalized = self._validate_request(request)
         scheduled = tuple(normalized["agents"])
         participating = (*scheduled, "meta", "synth")
