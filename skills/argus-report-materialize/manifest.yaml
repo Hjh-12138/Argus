@@ -5,7 +5,7 @@ license: Apache-2.0
 category: report
 purpose: Atomically materialize schema-valid JSON and Markdown audit reports.
 execution:
-  command: ["python", "implementation/main.py"]
+  command: ["python3", "implementation/main.py"]
   input: json-file
   output: json-file
   timeoutSeconds: 30

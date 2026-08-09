@@ -53,9 +53,12 @@ def meta_payload(run_id: str, snapshot: SnapshotReference,
         "schema_version": "1",
         "run_id": run_id,
         "snapshot_id": snapshot.snapshot_id,
-        "source_root": snapshot.source_root,
-        "snapshot_files": list(snapshot.files),
-        "results": assessor_artifacts,
+        "snapshot": {
+            "root": snapshot.source_root,
+            "files": list(snapshot.files),
+            "snapshot_id": snapshot.snapshot_id,
+        },
+        "agent_results": assessor_artifacts,
     }
 
 

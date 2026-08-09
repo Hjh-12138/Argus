@@ -5,7 +5,7 @@ license: Apache-2.0
 category: evidence
 purpose: Independently verify Finding path, line, hash, evidence, and actionability.
 execution:
-  command: ["python", "implementation/main.py"]
+  command: ["python3", "implementation/main.py"]
   input: json-file
   output: json-file
   timeoutSeconds: 30

@@ -2,7 +2,7 @@ name: argus-release-policy-evaluate
 version: 0.1.0
 owner: argus
 execution:
-  command: ["python", "implementation/main.py"]
+  command: ["python3", "implementation/main.py"]
   input: json-file
   output: json-file
   timeoutSeconds: 60

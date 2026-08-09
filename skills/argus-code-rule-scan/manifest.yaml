@@ -5,7 +5,7 @@ license: Apache-2.0
 category: assessor
 purpose: Deterministic headless assessor Skill that scans the immutable source snapshot.
 execution:
-  command: ["python", "implementation/main.py"]
+  command: ["python3", "implementation/main.py"]
   input: json-file
   output: json-file
   timeoutSeconds: 60
