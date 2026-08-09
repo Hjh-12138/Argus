@@ -123,25 +123,31 @@ class Orchestrator:
     def run_audit(self, request: dict) -> str:
         """Run the full audit DAG.
 
-        Uses the direct dispatch path for now. When Manager Agent is fully
-        activated, switch to _run_audit_via_manager().
+        Routes to the Manager Agent (via Matrix DM) for live audits.
+        Headless mode bypasses the Manager and dispatches synchronously
+        — used for automated testing and CI.
         """
-        return self.run_audit_direct(request)
+        if request.get("headless"):
+            return self.run_audit_direct(request)
+        return self._run_audit_via_manager(request)
 
     def _run_audit_via_manager(self, request: dict) -> str:
-        """Send audit request to Manager Agent via admin DM room."""
+        """Send audit request to Manager Agent via admin DM room.
+
+        Authenticates as @admin so the Manager does not ignore the message
+        (the Manager discards messages from itself / @manager).
+        """
         normalized = self._validate_request(request)
         run_id = normalized["run_id"]
         focus = ", ".join(normalized["agents"])
         project_id = normalized.get("project_id") or f"argus-{uuid.uuid4().hex[:12]}"
 
-        state_json = self.client._docker_exec(
-            "agentteams-manager",
-            "cat", "/root/manager-workspace/state.json")
-        state = json.loads(state_json) if isinstance(state_json, str) else json.loads(state_json.decode())
+        state = json.loads(self.client._docker_exec(
+            "cat", "/root/manager-workspace/state.json"))
         admin_room = state.get("admin_dm_room_id")
         if not admin_room:
-            raise HiclawError("Manager admin DM room not found. Run Manager onboarding first.")
+            raise HiclawError(
+                "Manager admin DM room not found. Run Manager onboarding first.")
 
         message = (
             f"**New Audit Request**\n\n"
@@ -152,7 +158,7 @@ class Orchestrator:
             f"Snapshot: `{normalized['snapshot_id']}`\n\n"
             f"Please run `audit-orchestrate` to plan and dispatch."
         )
-        self.client.send_project_message(admin_room, message)
+        self.client.send_admin_dm(admin_room, message)
         self.isolate_worker_context(project_id, "enter")
         return project_id
 

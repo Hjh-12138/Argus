@@ -507,6 +507,48 @@ curl -fsS -X PUT \
             mention_json, timeout=60,
         )
 
+    def send_admin_dm(self, room_id: str, body: str,
+                      mentions: Iterable[str] = ()) -> None:
+        """Send a Matrix DM as @admin to the Manager Agent.
+
+        The Manager ignores messages from itself, so audit requests must
+        arrive from a different user. This method authenticates as @admin
+        using the AGENTTEAMS_ADMIN_PASSWORD env var on the controller.
+        """
+        admin_password = self._docker_exec_in(
+            "agentteams-controller",
+            "sh", "-c", "echo \"$AGENTTEAMS_ADMIN_PASSWORD\"")
+        admin_password = admin_password.strip()
+        if not admin_password:
+            raise HiclawError(
+                "AGENTTEAMS_ADMIN_PASSWORD not set on controller container")
+
+        encoded = base64.b64encode(body.encode("utf-8")).decode("ascii")
+        mention_json = json.dumps(list(mentions), ensure_ascii=True)
+        homeserver = "http://agentteams-controller:6167"
+
+        script = r'''
+set -eu
+body=$(printf '%s' "$1" | base64 -d)
+txn="argus-admin-$(date +%s%N)"
+token=$(curl -fsS -X POST "$2/_matrix/client/v3/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"m.login.password","identifier":{"type":"m.id.user","user":"admin"},"password":"'"$3"'"}' \
+  | jq -r '.access_token // empty')
+: "${token:?admin Matrix login failed}"
+payload=$(jq -n --arg body "$body" --argjson mentions "$4" \
+  '{msgtype:"m.text",body:$body,"m.mentions":{user_ids:$mentions}}')
+curl -fsS -X PUT \
+  "$2/_matrix/client/v3/rooms/$5/send/m.room.message/${txn}" \
+  -H "Authorization: Bearer ${token}" \
+  -H 'Content-Type: application/json' -d "$payload" >/dev/null
+'''.strip()
+        self._docker_exec(
+            "bash", "-c", script, "argus-admin-dm",
+            encoded, homeserver, admin_password, mention_json, room_id,
+            timeout=60,
+        )
+
     @staticmethod
     def _validate_id(value: str, kind: str) -> None:
         if not re.fullmatch(r"[a-z][a-z0-9-]{2,63}", value):
