@@ -109,7 +109,7 @@ class NacosClient:
     def login(self, username: str, password: str) -> None:
         form = urllib.parse.urlencode(
             {"username": username, "password": password}).encode()
-        result = self._request("POST", "/v1/auth/login", form,
+        result = self._request("POST", "/nacos/v1/auth/login", form,
                                headers={"Content-Type": "application/x-www-form-urlencoded"},
                                raw_errors=True)
         token = result.get("accessToken")
@@ -185,7 +185,7 @@ class NacosClient:
             urllib.parse.quote(name) + "&namespaceId=" + urllib.parse.quote(self.namespace))
         versions = (result.get("data") or {}).get("versions") or []
         for version in versions:
-            if version.get("status") == "reviewed":
+            if version.get("status") in ("reviewed", "reviewing"):
                 return version
         return None
 
