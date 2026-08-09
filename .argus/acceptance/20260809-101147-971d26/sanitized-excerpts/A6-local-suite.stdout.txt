@@ -1,0 +1,55 @@
+......FFF............................................................... [ 53%]
+...............................................................          [100%]
+================================== FAILURES ===================================
+___________ test_vulnerable_target_blocks_with_three_real_findings ____________
+
+tmp_path = WindowsPath('C:/Users/31457/AppData/Local/Temp/pytest-of-31457/pytest-83/test_vulnerable_target_blocks_0')
+
+    def test_vulnerable_target_blocks_with_three_real_findings(tmp_path):
+        result = _audit(SCENARIO / "vulnerable", tmp_path, demo_invalid=True)
+>       assert result.returncode == 2, (
+            f"expected block, got {result.returncode}\nstdout={result.stdout}\nstderr={result.stderr}")
+E       AssertionError: expected block, got 1
+E         stdout=[argus] config={'policy': {'block_on': ['critical', 'high'], 'min_confidence': 0.8, 'require_quality_label': 'VERIFIED', 'incomplete_run': 'unknown'}, 'llm': {'base_url': '', 'api_key': '', 'model': '', 'send_source': False, 'max_diff_bytes': 262144}, 'output': {'directory': '.argus/reports', 'retain_runs': 30}, 'mcp': {'network': 'metadata_only', 'allowlist': []}}
+E         
+E         stderr=Traceback (most recent call last):
+E           File "<frozen runpy>", line 198, in _run_module_as_main
+E           File "<frozen runpy>", line 88, in _run_code
+E           File "E:\heishou\Argus v2\cli\argus.py", line 384, in <module>
+E             raise SystemExit(main())
+E                              ~~~~^^
+E           File "E:\heishou\Argus v2\cli\argus.py", line 79, in main
+E             return _cmd_audit(args)
+E           File "E:\heishou\Argus v2\cli\argus.py", line 132, in _cmd_audit
+E             return _audit_agentteams(args, cfg, store, run_id, target)
+E           File "E:\heishou\Argus v2\cli\argus.py", line 229, in _audit_agentteams
+E             driver = ProjectDriver(client, Path.cwd())
+E           File "E:\heishou\Argus v2\agentteams\project_driver.py", line 50, in __init__
+E             self._lock = self._load_lock()
+E                          ~~~~~~~~~~~~~~~^^
+E           File "E:\heishou\Argus v2\agentteams\project_driver.py", line 54, in _load_lock
+E             return json.loads(lock_path.read_text(encoding="utf-8"))
+E                               ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+E           File "D:\Anaconda\Lib\pathlib\_local.py", line 546, in read_text
+E             return PathBase.read_text(self, encoding, errors, newline)
+E                    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "D:\Anaconda\Lib\pathlib\_abc.py", line 632, in read_text
+E             with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+E                  ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "D:\Anaconda\Lib\pathlib\_local.py", line 537, in open
+E             return io.open(self, mode, buffering, encoding, errors, newline)
+E                    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\31457\\AppData\\Local\\Temp\\pytest-of-31457\\pytest-83\\test_vulnerable_target_blocks_0\\skills\\skills.lock.json'
+E         
+E       assert 1 == 2
+E        +  where 1 = CompletedProcess(args=['D:\\Anaconda\\python.exe', '-m', 'cli.argus', 'audit', '--target', 'E:\\heishou\\Argus v2\\dem...\\\Local\\\\Temp\\\\pytest-of-31457\\\\pytest-83\\\\test_vulnerable_target_blocks_0\\\\skills\\\\skills.lock.json\'\n').returncode
+
+tests\integration\test_cli_e2e.py:26: AssertionError
+__________________________ test_fixed_target_passes ___________________________
+
+tmp_path = WindowsPath('C:/Users/31457/AppData/Local/Temp/pytest-of-31457/pytest-83/test_fixed_target_passes0')
+
+    def test_fixed_target_passes(tmp_path):
+        result = _audit(SCENARIO / "fixed", tmp_path)
+>       assert result.returncode == 0, (
+            f"expected pass, got {result.returncode}\nstdout={result.stdout}\n

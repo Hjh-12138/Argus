@@ -551,7 +551,7 @@ curl -fsS -X PUT \
 
     @staticmethod
     def _validate_id(value: str, kind: str) -> None:
-        if not re.fullmatch(r"[a-z][a-z0-9-]{2,63}", value):
+        if not re.fullmatch(r"[a-z][a-z0-9-]{2,127}", value):
             raise HiclawError(f"invalid {kind} id: {value!r}")
 
     @staticmethod

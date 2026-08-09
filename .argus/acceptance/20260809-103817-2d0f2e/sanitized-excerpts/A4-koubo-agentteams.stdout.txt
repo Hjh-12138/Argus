@@ -1,0 +1,2 @@
+[argus] config={'policy': {'block_on': ['critical', 'high'], 'min_confidence': 0.8, 'require_quality_label': 'VERIFIED', 'incomplete_run': 'unknown'}, 'llm': {'base_url': '', 'api_key': '', 'model': '', 'send_source': False, 'max_diff_bytes': 262144}, 'output': {'directory': '.argus/reports', 'retain_runs': 30}, 'mcp': {'network': 'metadata_only', 'allowlist': []}}
+[argus] project=argus-run-edb77e5d-d8a8-41e6-895a-41afccc9a2e1 status=human-wait gate=unknown

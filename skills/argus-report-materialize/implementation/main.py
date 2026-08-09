@@ -8,8 +8,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
+
+# Executor runs from skillPath without PYTHONPATH; ensure the skill root is
+# on sys.path so that `implementation.report` resolves correctly.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from implementation.report import render_report, write_report
 

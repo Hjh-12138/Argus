@@ -1,0 +1,59 @@
+{
+  "resources": [
+    {
+      "kind": "lock",
+      "name": "skills\\skills.lock.json",
+      "digest": ""
+    },
+    {
+      "kind": "local",
+      "name": "leakage",
+      "digest": ""
+    },
+    {
+      "kind": "local",
+      "name": "acceptance.json",
+      "digest": ""
+    }
+  ],
+  "commands": [
+    {
+      "command": "A1-local-demo",
+      "exit": 2,
+      "duration_s": 0.115,
+      "stdout_excerpt": ".argus\\acceptance\\20260808-163333-d1a2fd\\sanitized-excerpts\\A1-local-demo.stdout.txt"
+    },
+    {
+      "command": "A2-agentteams-demo",
+      "exit": 4,
+      "duration_s": 604.797,
+      "stdout_excerpt": ".argus\\acceptance\\20260808-163333-d1a2fd\\sanitized-excerpts\\A2-agentteams-demo.stdout.txt",
+      "stderr_excerpt": ".argus\\acceptance\\20260808-163333-d1a2fd\\sanitized-excerpts\\A2-agentteams-demo.stderr.txt"
+    },
+    {
+      "command": "A3-fixed-demo",
+      "exit": 0,
+      "duration_s": 0.12,
+      "stdout_excerpt": ".argus\\acceptance\\20260808-163333-d1a2fd\\sanitized-excerpts\\A3-fixed-demo.stdout.txt"
+    },
+    {
+      "command": "A4-koubo-agentteams",
+      "exit": 4,
+      "duration_s": 604.399,
+      "stdout_excerpt": ".argus\\acceptance\\20260808-163333-d1a2fd\\sanitized-excerpts\\A4-koubo-agentteams.stdout.txt",
+      "stderr_excerpt": ".argus\\acceptance\\20260808-163333-d1a2fd\\sanitized-excerpts\\A4-koubo-agentteams.stderr.txt"
+    },
+    {
+      "command": "A6-local-suite",
+      "exit": 1,
+      "duration_s": 0.023,
+      "stderr_excerpt": ".argus\\acceptance\\20260808-163333-d1a2fd\\sanitized-excerpts\\A6-local-suite.stderr.txt"
+    },
+    {
+      "command": "A7-leak-audit",
+      "exit": 0,
+      "duration_s": 0.119,
+      "stdout_excerpt": ".argus\\acceptance\\20260808-163333-d1a2fd\\sanitized-excerpts\\A7-leak-audit.stdout.txt"
+    }
+  ]
+}

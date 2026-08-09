@@ -1,0 +1,48 @@
+{
+  "run_id": "20260808-161031-c7da87",
+  "phase_one": "rejected",
+  "accepted": "",
+  "generated_at": "2026-08-08T16:10:31.316040+00:00Z",
+  "items": [
+    {
+      "id": "A1",
+      "status": "PASS",
+      "detail": "vulnerable demo blocked with all three categories"
+    },
+    {
+      "id": "A2",
+      "status": "BLOCKED",
+      "detail": "requires --agentteams-live"
+    },
+    {
+      "id": "A3",
+      "status": "PASS",
+      "detail": "fixed demo passed with no vulnerable categories"
+    },
+    {
+      "id": "A4",
+      "status": "BLOCKED",
+      "detail": "requires --agentteams-live"
+    },
+    {
+      "id": "A5",
+      "status": "PASS",
+      "detail": "8 unique skills locked"
+    },
+    {
+      "id": "A6",
+      "status": "FAIL",
+      "detail": "local suite failed: 0 passed, 0 failed, 0 skipped, 0 deselected"
+    },
+    {
+      "id": "A7",
+      "status": "BLOCKED",
+      "detail": "requires --leakage-e2e"
+    },
+    {
+      "id": "A8",
+      "status": "PASS",
+      "detail": "README/简介/PPT/acceptance.md match measured facts"
+    }
+  ]
+}

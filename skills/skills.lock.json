@@ -6,42 +6,42 @@
   "skills": [
     {
       "name": "argus-dependency-inspect",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "local_sha256": "a0c36a9eced0d347bbcb7d4e3a92ca27788e0f2aef5559bcddf61f8245f32db3"
     },
     {
       "name": "argus-code-rule-scan",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "local_sha256": "e3a606e3cecf909ec042c7e1b22449b0178c7bda3e27c731c3fa1767633b5337"
     },
     {
       "name": "argus-secret-scan",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "local_sha256": "aad07cc2492f3524253d8ed5d8b76705371672f826c480ea6dd4170540cb559b"
     },
     {
       "name": "argus-ci-policy-check",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "local_sha256": "7298f0618946649e1545fb526a35f8c1a07c659c8f50a7904c8fb4c0d327fd16"
     },
     {
       "name": "argus-finding-emit",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "local_sha256": "232c19720e246238a7c40068a60bd0c258ce9865710e833621ece16f3326a15f"
     },
     {
       "name": "argus-evidence-verify",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "local_sha256": "a1412a0868e311a4e8273797cd357b0f322e988beacf0584179095f6e3329a9d"
     },
     {
       "name": "argus-release-policy-evaluate",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "local_sha256": "6897e27db0c0b97c9a7b94dc9c9cb501d7457cd78f1790adc33198fc0fd41209"
     },
     {
       "name": "argus-report-materialize",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "local_sha256": "7c6b8041ce55eeb7f16667690152679bcf8002b5e3007e1b95476acbfa269808"
     }
   ],

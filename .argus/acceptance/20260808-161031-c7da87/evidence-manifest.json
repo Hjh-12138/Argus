@@ -1,0 +1,34 @@
+{
+  "resources": [
+    {
+      "kind": "lock",
+      "name": "skills\\skills.lock.json",
+      "digest": ""
+    },
+    {
+      "kind": "local",
+      "name": "acceptance.json",
+      "digest": ""
+    }
+  ],
+  "commands": [
+    {
+      "command": "A1-local-demo",
+      "exit": 2,
+      "duration_s": 0.12,
+      "stdout_excerpt": ".argus\\acceptance\\20260808-161031-c7da87\\sanitized-excerpts\\A1-local-demo.stdout.txt"
+    },
+    {
+      "command": "A3-fixed-demo",
+      "exit": 0,
+      "duration_s": 0.116,
+      "stdout_excerpt": ".argus\\acceptance\\20260808-161031-c7da87\\sanitized-excerpts\\A3-fixed-demo.stdout.txt"
+    },
+    {
+      "command": "A6-local-suite",
+      "exit": 1,
+      "duration_s": 0.022,
+      "stderr_excerpt": ".argus\\acceptance\\20260808-161031-c7da87\\sanitized-excerpts\\A6-local-suite.stderr.txt"
+    }
+  ]
+}

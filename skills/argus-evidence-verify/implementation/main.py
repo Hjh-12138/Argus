@@ -8,9 +8,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
+
+# Executor runs from skillPath without PYTHONPATH; ensure the skill root is
+# on sys.path so that `implementation.meta` resolves correctly.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from implementation.meta import (
     AgentResult, Evidence, Finding, MetaReviewer,
@@ -65,7 +70,7 @@ def _parse_result(raw: dict) -> AgentResult:
     )
 
 
-def invoke(payload: dict) -> list[dict]:
+def invoke(payload: dict) -> dict:
     """Invoke MetaReviewer from a JSON payload dict (used by agent adapter and CLI)."""
     snapshot_raw = payload["snapshot"]
     snapshot = SourceSnapshot(
@@ -78,7 +83,8 @@ def invoke(payload: dict) -> list[dict]:
     )
     results = tuple(_parse_result(r) for r in payload.get("agent_results", []))
     decisions = MetaReviewer().review(snapshot, results)
-    return [asdict(d) for d in decisions]
+    # Executor expects a JSON object, not an array.
+    return {"decisions": [asdict(d) for d in decisions]}
 
 
 def main(argv: list[str] | None = None) -> int:
