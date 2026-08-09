@@ -53,6 +53,10 @@ def meta_payload(run_id: str, snapshot: SnapshotReference,
         "schema_version": "1",
         "run_id": run_id,
         "snapshot_id": snapshot.snapshot_id,
+        # Top-level source_root is required by the executor's
+        # extractSnapshotInputs() to unzip the snapshot archive before the
+        # skill runs. Without it, meta skills see no files → PATH_NOT_READABLE.
+        "source_root": snapshot.source_root,
         "snapshot": {
             "root": snapshot.source_root,
             "files": list(snapshot.files),
@@ -70,6 +74,8 @@ def synth_payload(run_id: str, snapshot: SnapshotReference,
         "schema_version": "1",
         "run_id": run_id,
         "snapshot_id": snapshot.snapshot_id,
+        # Required by extractSnapshotInputs() for snapshot extraction.
+        "source_root": snapshot.source_root,
         "output_dir": ".",
         "snapshot": {"snapshot_id": snapshot.snapshot_id},
         "agent_results": assessor_artifacts,
