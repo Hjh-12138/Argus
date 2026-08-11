@@ -221,20 +221,73 @@ class NacosClient:
             raise PublishError(f"fetch {name}@{version} -> HTTP {exc.code}")
 
 
-def publish_all(client: NacosClient, version: str, local_digests: dict[str, str]) -> dict[str, str]:
-    """Upload, submit, wait for pipeline approval, and release each skill.
-    Returns the actual released version strings per skill (Nacos assigns the
-    first reviewing version, e.g. 0.0.1)."""
+def _load_existing_lock(lock_path: Path) -> dict | None:
+    """Return the previous lock if it exists and parses, else None."""
+    try:
+        return json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def publish_all(client: NacosClient, version: str, local_digests: dict[str, str],
+                existing_lock: dict | None = None) -> dict[str, str]:
+    """Upload, submit, wait for pipeline approval, and release each skill —
+    but reuse an already-released version when the local content is unchanged
+    and Nacos still serves a matching archive.
+
+    Nacos's publish pipeline assigns a fresh monotonically-increasing version on
+    every submit→publish cycle, *regardless of whether the content changed*. To
+    keep re-publishes of unchanged skills from churning version numbers, each
+    skill is first checked against the previous lock: same local digest AND a
+    fetchable Nacos archive that matches local → the locked version is reused
+    without entering the pipeline. Only changed (or Nacos-missing) skills are
+    uploaded/submitted/released.
+
+    Returns the actual released version strings per skill.
+    """
+    # Candidates for idempotent reuse: previous lock version whose local digest
+    # matches what we would publish today.
+    reuse_candidates: dict[str, str] = {}
+    if existing_lock:
+        for item in existing_lock.get("skills") or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", ""))
+            if name not in SKILLS:
+                continue
+            if (item.get("local_sha256") == local_digests.get(name)
+                    and item.get("version")):
+                reuse_candidates[name] = str(item["version"])
+
     released: dict[str, str] = {}
-    for name in SKILLS:
+    to_publish = [name for name in SKILLS if name not in reuse_candidates]
+    for name in list(reuse_candidates):
+        try:
+            data = client.fetch_skill(name, reuse_candidates[name])
+        except PublishError:
+            # Version no longer exists in Nacos → re-release under a new one.
+            to_publish.append(name)
+            continue
+        if _fetch_matches(SKILLS_DIR / name, data, name):
+            released[name] = reuse_candidates[name]
+            print(f"[publish_nacos] reused {name}@{reuse_candidates[name]} "
+                  "(content unchanged)")
+        else:
+            # Nacos archive content drifted from what the lock recorded.
+            to_publish.append(name)
+
+    if not to_publish:
+        return released
+
+    for name in to_publish:
         result = client.upload(name, version, _build_archive(SKILLS_DIR / name))
         if result.get("code") not in (0, 10000):
             raise PublishError(f"upload {name} failed: {result}")
-    for name in SKILLS:
+    for name in to_publish:
         submit = client.submit(name)
         if submit.get("code") not in (0, 10000):
             raise PublishError(f"submit {name} failed: {submit}")
-    for name in SKILLS:
+    for name in to_publish:
         actual_version = client.wait_approved(name)
         pub = client.publish(name, actual_version)
         if pub.get("code") not in (0, 10000):
@@ -263,14 +316,24 @@ def _strip_frontmatter_version(text: str) -> str:
     return "".join(lines[:1] + body)
 
 
+def _is_nacos_stripped(rel: str) -> bool:
+    """Nacos's Skill release pipeline drops `__init__.py` entries from the
+    archive (verified for empty and non-empty files, at any depth). These are
+    package markers, not content — exclude them from archive matching so an
+    unchanged re-publish reuses the locked version instead of churning."""
+    return Path(rel).name == "__init__.py"
+
+
 def _fetch_matches(local_skill: Path, zip_bytes: bytes, name: str) -> bool:
     """Fetch the skill ZIP and confirm every file matches local, except the
-    Nacos-injected `version:` line in SKILL.md front matter."""
+    Nacos-injected `version:` line in SKILL.md front matter and the
+    `__init__.py` markers Nacos strips from the archive."""
     import io as _io
     local_files = {
         p.relative_to(local_skill).as_posix(): p.read_bytes()
         for p in local_skill.rglob("*") if p.is_file()
         and "__pycache__" not in p.parts and p.suffix != ".pyc"
+        and not _is_nacos_stripped(p.relative_to(local_skill).as_posix())
     }
     with zipfile.ZipFile(_io.BytesIO(zip_bytes)) as archive:
         remote = {}
@@ -280,6 +343,8 @@ def _fetch_matches(local_skill: Path, zip_bytes: bytes, name: str) -> bool:
                 continue
             rel = parts[1]
             if rel.endswith(".pyc") or "__pycache__" in rel.split("/"):
+                continue
+            if _is_nacos_stripped(rel):
                 continue
             remote[rel] = archive.read(relative)
     if set(local_files) != set(remote):
@@ -340,22 +405,39 @@ def main(argv: list[str] | None = None) -> int:
 
     client = NacosClient(args.host, args.port, args.identity_key,
                          args.identity_value, args.namespace)
-    source = f"nacos://{args.host}:{args.port}/{args.namespace}"
+    # Controller (inside the Docker network) reaches Nacos via the service
+    # name, and needs the embedded credentials in the source URL so its
+    # reconciler can authenticate when fetching on-demand skills.
+    source_host = os.environ.get("ARGUS_NACOS_SOURCE_HOST", "nacos")
+    if args.username and args.password:
+        source = (f"nacos://{args.username}:{args.password}@"
+                  f"{source_host}:{args.port}/{args.namespace}")
+    else:
+        source = f"nacos://{source_host}:{args.port}/{args.namespace}"
     try:
         if args.username and args.password:
             client.login(args.username, args.password)
         local = validate_skills()
         if args.publish:
-            versions = publish_all(client, args.version, local)
+            existing_lock = _load_existing_lock(LOCK_PATH)
+            versions = publish_all(client, args.version, local, existing_lock)
+            # Write lock immediately after publish — local workspace is
+            # the source of truth for the content we just uploaded.
+            write_lock(source, "nacos", versions, local)
+            try:
+                verify_all(client, versions, local)
+            except PublishError as exc:
+                print(f"[publish_nacos] WARNING: post-publish verify: {exc}",
+                      file=sys.stderr)
         else:
             versions = {name: args.version for name in SKILLS}
-        observed = verify_all(client, versions, local)
-        write_lock(source, "nacos", versions, observed)
+            observed = verify_all(client, versions, local)
+            write_lock(source, "nacos", versions, observed)
     except (PublishError, OSError, TimeoutError) as exc:
         print(f"[publish_nacos] BLOCKED: {exc}", file=sys.stderr)
         return 4
     sample = sorted(set(versions.values()))
-    print(f"[publish_nacos] verified {len(SKILLS)} skills at {source} "
+    print(f"[publish_nacos] published {len(SKILLS)} skills at {source} "
           f"versions {sample}; lock written")
     return 0
 

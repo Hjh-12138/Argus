@@ -1,48 +1,48 @@
 {
   "schema_version": "2",
-  "source": "nacos://nacos:8848/public",
+  "source": "nacos://nacos:nacos@nacos:8848/public",
   "auth_type": "nacos",
-  "locked_at": "2026-08-04T09:55:13.003707+00:00Z",
+  "locked_at": "2026-08-11T05:54:28.234810+00:00Z",
   "skills": [
     {
       "name": "argus-dependency-inspect",
-      "version": "0.0.2",
-      "local_sha256": "a0c36a9eced0d347bbcb7d4e3a92ca27788e0f2aef5559bcddf61f8245f32db3"
+      "version": "0.0.1",
+      "local_sha256": "011121f7f2b4be941bde929bc58a1505b07b07762b4197286b05cc31fa299dc6"
     },
     {
       "name": "argus-code-rule-scan",
-      "version": "0.0.2",
-      "local_sha256": "e3a606e3cecf909ec042c7e1b22449b0178c7bda3e27c731c3fa1767633b5337"
+      "version": "0.0.9",
+      "local_sha256": "1b1c3515d63824980013700ad271bab2fd824346708e914dddd3d2a3b63e501d"
     },
     {
       "name": "argus-secret-scan",
-      "version": "0.0.2",
-      "local_sha256": "aad07cc2492f3524253d8ed5d8b76705371672f826c480ea6dd4170540cb559b"
+      "version": "0.0.9",
+      "local_sha256": "fdc43509fea8381cce958fccb26566ce776dbc225e9cc55a99ae226adea9af62"
     },
     {
       "name": "argus-ci-policy-check",
-      "version": "0.0.2",
-      "local_sha256": "7298f0618946649e1545fb526a35f8c1a07c659c8f50a7904c8fb4c0d327fd16"
+      "version": "0.0.9",
+      "local_sha256": "dc0bac4dcc9b8894ca1c2707bad91b7790e8fde2472e52e05e0ca6454137c80a"
     },
     {
       "name": "argus-finding-emit",
-      "version": "0.0.2",
-      "local_sha256": "232c19720e246238a7c40068a60bd0c258ce9865710e833621ece16f3326a15f"
+      "version": "0.0.1",
+      "local_sha256": "285ac187e2db262a862195c1721573bb72e402161f4942128f9bcbfabf2af43b"
     },
     {
       "name": "argus-evidence-verify",
-      "version": "0.0.2",
-      "local_sha256": "a1412a0868e311a4e8273797cd357b0f322e988beacf0584179095f6e3329a9d"
+      "version": "0.0.9",
+      "local_sha256": "e3c4fdb8c86c6632432ffd7a9d47a4b6c43c4dfedd945df23093351df5154f30"
     },
     {
       "name": "argus-release-policy-evaluate",
-      "version": "0.0.2",
-      "local_sha256": "6897e27db0c0b97c9a7b94dc9c9cb501d7457cd78f1790adc33198fc0fd41209"
+      "version": "0.0.9",
+      "local_sha256": "7ba263d2e917cf6640df13b62fce1ac6884d74914664729fe046b3b9ff9b9a75"
     },
     {
       "name": "argus-report-materialize",
-      "version": "0.0.2",
-      "local_sha256": "7c6b8041ce55eeb7f16667690152679bcf8002b5e3007e1b95476acbfa269808"
+      "version": "0.0.9",
+      "local_sha256": "7a210daad7794994ebe73f9a102ed3ba869ae53d3b08da81dadb6c609106164b"
     }
   ],
   "assignments": {

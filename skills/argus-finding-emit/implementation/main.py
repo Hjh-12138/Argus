@@ -1,7 +1,15 @@
 """argus-finding-emit skill entrypoint."""
 from __future__ import annotations
 
-from core.schemas import Evidence, Finding, finding_to_dict
+import sys
+from pathlib import Path
+
+# Vendored schemas — the host `core` package is absent in the worker sandbox.
+_skill_dir = Path(__file__).resolve().parent
+if str(_skill_dir) not in sys.path:
+    sys.path.insert(0, str(_skill_dir))
+
+from schemas import Evidence, Finding, finding_to_dict
 
 
 def invoke(payload: dict) -> dict:
