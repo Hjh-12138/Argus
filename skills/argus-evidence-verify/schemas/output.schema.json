@@ -1,14 +1,53 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "MetaDecision",
+  "title": "MetaReviewOutput",
   "type": "object",
-  "additionalProperties": false,
-  "required": ["finding_id", "label", "reason_codes", "detail"],
+  "required": [
+    "decisions"
+  ],
   "properties": {
-    "finding_id": {"type": "string"},
-    "label": {"type": "string", "enum": ["VERIFIED", "NEEDS_EVIDENCE", "INCONSISTENT", "HALLUCINATION", "NOT_ACTIONABLE"]},
-    "reason_codes": {"type": "array", "items": {"type": "string"}},
-    "detail": {"type": "string"},
-    "checked_source_sha256": {"type": ["string", "null"]}
-  }
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "finding_id",
+          "label",
+          "reason_codes",
+          "detail"
+        ],
+        "properties": {
+          "finding_id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string",
+            "enum": [
+              "VERIFIED",
+              "NEEDS_EVIDENCE",
+              "INCONSISTENT",
+              "HALLUCINATION",
+              "NOT_ACTIONABLE"
+            ]
+          },
+          "reason_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "detail": {
+            "type": "string"
+          },
+          "checked_source_sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
 }

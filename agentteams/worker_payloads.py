@@ -5,7 +5,7 @@ file digests, and role-only fixtures travel in the input payload.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 ROLE_SKILLS = {
     "dep": "argus-dependency-inspect",
@@ -14,6 +14,53 @@ ROLE_SKILLS = {
     "delivery": "argus-ci-policy-check",
     "meta": "argus-evidence-verify",
     "synth": "argus-release-policy-evaluate",
+}
+
+ASSESSORS = ("dep", "code", "sec", "delivery")
+CORE_AGENTS = (*ASSESSORS, "meta", "synth")
+WORKER_RUNTIME = "openclaw"
+WORKER_IMAGE = "agentteams/worker-agent:v1.2.0-beta.1-argus.7"
+
+
+@dataclass(frozen=True)
+class WorkerDefinition:
+    agent: str
+    name: str
+    role: str
+    skills: tuple[str, ...]
+
+
+WORKERS: dict[str, WorkerDefinition] = {
+    "dep": WorkerDefinition(
+        "dep", "argus-dep",
+        "Dependency auditor. Validate manifests and registry evidence without installing dependencies.",
+        ("argus-dependency-inspect", "argus-finding-emit"),
+    ),
+    "code": WorkerDefinition(
+        "code", "argus-code",
+        "Code auditor. Validate correctness and state contracts without executing target code.",
+        ("argus-code-rule-scan", "argus-finding-emit"),
+    ),
+    "sec": WorkerDefinition(
+        "sec", "argus-sec",
+        "Security auditor. Validate static security evidence and never emit raw secrets.",
+        ("argus-secret-scan", "argus-finding-emit"),
+    ),
+    "delivery": WorkerDefinition(
+        "delivery", "argus-delivery",
+        "Delivery auditor. Validate CI and release evidence without triggering CI or deployment.",
+        ("argus-ci-policy-check", "argus-finding-emit"),
+    ),
+    "meta": WorkerDefinition(
+        "meta", "argus-meta",
+        "Evidence quality gate. Verify evidence only; never create findings or decide the release gate.",
+        ("argus-evidence-verify",),
+    ),
+    "synth": WorkerDefinition(
+        "synth", "argus-synth",
+        "Audit synthesizer. Consume Meta-reviewed artifacts and apply deterministic release policy.",
+        ("argus-release-policy-evaluate", "argus-report-materialize"),
+    ),
 }
 
 

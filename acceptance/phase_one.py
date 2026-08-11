@@ -2,9 +2,9 @@
 
 Each item follows the written A1-A8 matrix instead of blindly accepting an
 exit code:
-  A1  vulnerable demo (local) must block and report all three categories
+  A1  vulnerable demo (AgentTeams) must run through real Workers and block
   A2  vulnerable demo (AgentTeams) must run through real Workers and block
-  A3  fixed demo (local) must pass with no vulnerable categories
+  A3  fixed demo (AgentTeams) must run through real Workers and pass
   A4  koubo current-source snapshot on real Workers (live only)
   A5  eight locked Skills + (live) observed ready assignments
   A6  local + live suites, per-suite counts recorded
@@ -18,6 +18,7 @@ import os
 import re
 import secrets
 import shutil
+import subprocess
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -65,6 +66,27 @@ def _read_report(path: Path) -> dict | None:
         return None
 
 
+def _read_agentteams_report(stdout: str) -> dict | None:
+    """Pull the report from MinIO using the path found in audit stdout."""
+    for line in stdout.splitlines():
+        if "report=" not in line:
+            continue
+        report_path = line.split("report=", 1)[1].strip()
+        if not report_path.startswith("projects/"):
+            continue
+        try:
+            raw = subprocess.run(
+                ["docker", "exec", "agentteams-controller",
+                 "mc", "cat", f"agentteams/agentteams-storage/shared/{report_path}"],
+                capture_output=True, text=True, encoding="utf-8", timeout=30)
+            if raw.returncode == 0 and raw.stdout:
+                return json.loads(raw.stdout)
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+            pass
+    return None
+    return None
+
+
 def _report_gate(path: Path) -> str | None:
     data = _read_report(path)
     return data.get("release_gate") if isinstance(data, dict) else None
@@ -107,15 +129,27 @@ def run_phase_one(*, target: Path, workspace_mode: str = "current-source",
     run_root = ACCEPTANCE_ROOT / run_id
     run_root.mkdir(parents=True, exist_ok=True)
     evidence = EvidenceCollector(run_root)
-    items = [
-        _a1_local(evidence),
-        _a2_agentteams_demo(evidence, agentteams_live),
-        _a3_fixed(evidence),
-        _a4_koubo(evidence, target, workspace_mode, agentteams_live),
-        _a5_skill_lock(evidence, agentteams_live),
-        _a6_suites(evidence, agentteams_live),
-        _a7_leakage(evidence, run_root, leakage_e2e),
-    ]
+    preflight = _agentteams_preflight(evidence, agentteams_live)
+    if agentteams_live and preflight.status != "PASS":
+        items = [
+            AcceptanceItem("A1", "BLOCKED", f"blocked by Worker model preflight: {preflight.detail}"),
+            AcceptanceItem("A2", "BLOCKED", f"blocked by Worker model preflight: {preflight.detail}"),
+            AcceptanceItem("A3", "BLOCKED", f"blocked by Worker model preflight: {preflight.detail}"),
+            AcceptanceItem("A4", "BLOCKED", f"blocked by Worker model preflight: {preflight.detail}"),
+            _a5_skill_lock(evidence, agentteams_live),
+            _a6_suites(evidence, False),
+            _a7_leakage(evidence, run_root, leakage_e2e),
+        ]
+    else:
+        items = [
+            _a1_agentteams(evidence, agentteams_live),
+            _a2_agentteams_demo(evidence, agentteams_live),
+            _a3_agentteams(evidence, agentteams_live),
+            _a4_koubo(evidence, target, workspace_mode, agentteams_live),
+            _a5_skill_lock(evidence, agentteams_live),
+            _a6_suites(evidence, agentteams_live),
+            _a7_leakage(evidence, run_root, leakage_e2e),
+        ]
     # A8 verifies delivery docs including the acceptance.md deliverable, so
     # write it first from the current run, then finalize the report.
     _write_acceptance_md(AcceptanceReport(run_id=run_id, phase_one="rejected",
@@ -134,15 +168,65 @@ def run_phase_one(*, target: Path, workspace_mode: str = "current-source",
     return report
 
 
-def _a1_local(evidence: EvidenceCollector) -> AcceptanceItem:
-    result = _run_audit(evidence, "A1-local-demo", DEMO / "vulnerable",
-                        engine="local", demo_invalid=True)
-    if not _audit_completed(result.get("exit", -1)):
-        return AcceptanceItem("A1", "FAIL", "demo local audit did not complete")
-    report = _read_report(REPORT_JSON)
-    gate = report.get("release_gate") if report else None
-    if gate != "block":
-        return AcceptanceItem("A1", "FAIL", f"vulnerable demo gate={gate}, want block")
+def _agentteams_preflight(evidence: EvidenceCollector, live: bool) -> AcceptanceItem:
+    """Verify desired model, Worker health, and locked Skill assignments.
+
+    Runtime model acceptance is proven by the live audits themselves; a Running
+    control-plane record alone is deliberately not described as runtime proof.
+    """
+    if not live:
+        return AcceptanceItem("PREFLIGHT", "BLOCKED", "requires --agentteams-live")
+    try:
+        from agentteams.hiclaw_client import HiclawClient
+        from agentteams.model_config import load_locked_model, model_mismatch
+        from agentteams.worker_payloads import CORE_AGENTS, WORKERS
+
+        expected_model = load_locked_model(Path("agentteams/contract.lock.json"))
+        client = HiclawClient()
+        errors = []
+        for agent in CORE_AGENTS:
+            worker = WORKERS[agent]
+            rows = client.get_workers(worker.name)
+            record = rows[0] if rows else {}
+            actual_model = client.get_worker_effective_model(worker.name)
+            if actual_model != expected_model:
+                errors.append(model_mismatch(worker.name, expected_model, actual_model))
+            if record.get("phase") not in ("Ready", "Running"):
+                errors.append(f"worker={worker.name} phase={record.get('phase')}")
+            observed = client.get_worker_skill_observation(worker.name)
+            ready = {item.get("name") for item in observed.get("skills", [])
+                     if item.get("ready")}
+            if ready != set(worker.skills):
+                errors.append(
+                    f"worker={worker.name} expected_skills={sorted(worker.skills)} "
+                    f"ready_skills={sorted(ready)}")
+        if errors:
+            return AcceptanceItem("PREFLIGHT", "FAIL", "; ".join(errors))
+        evidence.add_resource("agentteams", "worker-model-preflight")
+        return AcceptanceItem("PREFLIGHT", "PASS",
+                              f"6 Workers desired model={expected_model}; Skills ready")
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        return AcceptanceItem("PREFLIGHT", "FAIL", f"Worker preflight failed: {exc}")
+    except Exception as exc:
+        return AcceptanceItem("PREFLIGHT", "FAIL",
+                              f"Worker control-plane query failed: {exc}")
+
+
+def _a1_agentteams(evidence: EvidenceCollector, live: bool) -> AcceptanceItem:
+    if not live:
+        return AcceptanceItem("A1", "BLOCKED", "requires --agentteams-live")
+    result = _run_audit(evidence, "A1-agentteams-demo", DEMO / "vulnerable",
+                        engine="agentteams", demo_invalid=True, timeout=1800)
+    if not (_audit_completed(result.get("exit", -1))
+            and _agentteams_completed(result.get("stdout", ""))):
+        return AcceptanceItem("A1", "FAIL",
+                              "demo agentteams audit did not complete on real Workers")
+    if result.get("exit") != 2:
+        return AcceptanceItem("A1", "FAIL",
+                              f"vulnerable demo gate exit={result.get('exit')}, want block(2)")
+    report = _read_agentteams_report(result.get("stdout", ""))
+    if report is None:
+        return AcceptanceItem("A1", "FAIL", "could not read agentteams report from MinIO")
     categories = {f.get("category") for f in report.get("findings", [])}
     missing = sorted(VULNERABLE_CATEGORIES - categories)
     if missing:
@@ -167,12 +251,21 @@ def _a2_agentteams_demo(evidence: EvidenceCollector, live: bool) -> AcceptanceIt
                           "demo ran through real Workers and blocked on defects")
 
 
-def _a3_fixed(evidence: EvidenceCollector) -> AcceptanceItem:
-    result = _run_audit(evidence, "A3-fixed-demo", DEMO / "fixed", engine="local")
+def _a3_agentteams(evidence: EvidenceCollector, live: bool) -> AcceptanceItem:
+    if not live:
+        return AcceptanceItem("A3", "BLOCKED", "requires --agentteams-live")
+    result = _run_audit(evidence, "A3-fixed-demo", DEMO / "fixed",
+                        engine="agentteams", timeout=1800)
+    if not (_audit_completed(result.get("exit", -1))
+            and _agentteams_completed(result.get("stdout", ""))):
+        return AcceptanceItem("A3", "FAIL",
+                              "fixed demo agentteams audit did not complete on real Workers")
     if result.get("exit") != 0:
         return AcceptanceItem("A3", "FAIL", f"fixed demo exit={result.get('exit')}, want 0")
-    report = _read_report(REPORT_JSON)
-    gate = report.get("release_gate") if report else None
+    report = _read_agentteams_report(result.get("stdout", ""))
+    if report is None:
+        return AcceptanceItem("A3", "FAIL", "could not read agentteams report from MinIO")
+    gate = report.get("release_gate")
     if gate != "pass":
         return AcceptanceItem("A3", "FAIL", f"fixed demo gate={gate}, want pass")
     categories = {f.get("category") for f in report.get("findings", [])}
@@ -288,26 +381,48 @@ def _a7_leakage(evidence: EvidenceCollector, run_root: Path,
     result = evidence.run_command(
         "A7-leak-audit",
         [sys.executable, "-m", "cli.argus", "audit",
-         "--target", str(fixture), "--headless", "--engine", "local"],
-        timeout=300)
+         "--target", str(fixture), "--headless", "--engine", "agentteams"],
+        timeout=900)
 
     raw_out = temp_root / "leak.stdout.txt"
     raw_err = temp_root / "leak.stderr.txt"
-    raw_out.write_text(result.get("stdout", ""), encoding="utf-8")
+    stdout_text = result.get("stdout", "")
+    raw_out.write_text(stdout_text, encoding="utf-8")
     raw_err.write_text(result.get("stderr", ""), encoding="utf-8")
+
+    # Extract project report paths from stdout: "[argus] report=projects/<id>/report.json"
+    minio_surfaces = []
+    for line in stdout_text.splitlines():
+        if "report=" in line:
+            report_path = line.split("report=", 1)[1].strip()
+            if report_path.startswith("projects/"):
+                # Pull report from MinIO shared storage
+                try:
+                    raw = subprocess.run(
+                        ["docker", "exec", "agentteams-controller",
+                         "mc", "cat", f"agentteams/agentteams-storage/shared/{report_path}"],
+                        capture_output=True, text=True, timeout=30)
+                    if raw.returncode == 0 and raw.stdout.strip():
+                        minio_path = temp_root / Path(report_path).name
+                        minio_path.write_text(raw.stdout, encoding="utf-8")
+                        minio_surfaces.append(minio_path)
+                except Exception:
+                    pass
+
     surfaces = {
         "report.json": [REPORT_JSON],
         "report.md": [Path(".argus/reports/report.md")],
         "audit.stdout": [raw_out],
         "audit.stderr": [raw_err],
         "evidence": [path for path in run_root.rglob("*") if path.is_file()],
+        "minio-report": minio_surfaces,
     }
     hits = _scan_canary(canary, surfaces)
-    evidence.add_resource("local", "leakage")
+    evidence.add_resource("agentteams", "leakage")
     if hits:
         return AcceptanceItem("A7", "FAIL", f"canary leaked into: {hits}")
     return AcceptanceItem("A7", "PASS",
-                          "random canary zero leak across report and audit output")
+                          f"canary zero leak across agentteams audit surfaces ({len(minio_surfaces)} minio artifacts)")
 
 
 def _a8_docs(evidence: EvidenceCollector, run_id: str) -> AcceptanceItem:

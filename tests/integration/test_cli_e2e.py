@@ -11,7 +11,7 @@ REGISTRY = SCENARIO / "registry-fixture.json"
 def _audit(target: Path, workdir: Path, demo_invalid=False):
     cmd = [
         sys.executable, "-m", "cli.argus", "audit",
-        "--target", str(target), "--headless",
+        "--target", str(target), "--headless", "--engine", "local",
         "--registry-fixture", str(REGISTRY),
     ]
     if demo_invalid:

@@ -34,40 +34,37 @@ def test_pytest_summary_parses_counts():
 
 def test_a1_passes_when_block_and_all_categories(tmp_path, monkeypatch):
     ev = _evidence(tmp_path)
-    monkeypatch.setattr(pn, "REPORT_JSON", tmp_path / "report.json")
-    (tmp_path / "report.json").write_text(json.dumps({
+    report = {
         "release_gate": "block",
         "findings": [
             {"category": "dependency.nonexistent"},
             {"category": "security.sql_injection"},
             {"category": "delivery.test_gap"},
         ],
-    }), encoding="utf-8")
-    monkeypatch.setattr(ev, "run_command", lambda *a, **k: {"exit": 2})
-    assert pn._a1_local(ev).status == "PASS"
+    }
+    monkeypatch.setattr(pn, "_read_agentteams_report", lambda stdout: report)
+    monkeypatch.setattr(ev, "run_command",
+                        lambda *a, **k: {"exit": 2, "stdout": "status=completed"})
+    assert pn._a1_agentteams(ev, True).status == "PASS"
 
 
 def test_a1_fails_when_missing_category(tmp_path, monkeypatch):
     ev = _evidence(tmp_path)
-    monkeypatch.setattr(pn, "REPORT_JSON", tmp_path / "report.json")
-    (tmp_path / "report.json").write_text(json.dumps({
-        "release_gate": "block",
-        "findings": [{"category": "dependency.nonexistent"}],
-    }), encoding="utf-8")
-    monkeypatch.setattr(ev, "run_command", lambda *a, **k: {"exit": 2})
-    item = pn._a1_local(ev)
+    report = {"release_gate": "block",
+              "findings": [{"category": "dependency.nonexistent"}]}
+    monkeypatch.setattr(pn, "_read_agentteams_report", lambda stdout: report)
+    monkeypatch.setattr(ev, "run_command",
+                        lambda *a, **k: {"exit": 2, "stdout": "status=completed"})
+    item = pn._a1_agentteams(ev, True)
     assert item.status == "FAIL"
     assert "delivery.test_gap" in item.detail
 
 
 def test_a1_fails_when_gate_is_not_block(tmp_path, monkeypatch):
     ev = _evidence(tmp_path)
-    monkeypatch.setattr(pn, "REPORT_JSON", tmp_path / "report.json")
-    (tmp_path / "report.json").write_text(json.dumps({
-        "release_gate": "pass", "findings": [],
-    }), encoding="utf-8")
-    monkeypatch.setattr(ev, "run_command", lambda *a, **k: {"exit": 0})
-    assert pn._a1_local(ev).status == "FAIL"
+    monkeypatch.setattr(ev, "run_command",
+                        lambda *a, **k: {"exit": 0, "stdout": "status=completed"})
+    assert pn._a1_agentteams(ev, True).status == "FAIL"
 
 
 def test_agentteams_completed_marker():
@@ -99,24 +96,22 @@ def test_a2_fails_when_crash_without_completion_marker(tmp_path, monkeypatch):
 
 def test_a3_passes_when_fixed_and_clean(tmp_path, monkeypatch):
     ev = _evidence(tmp_path)
-    monkeypatch.setattr(pn, "REPORT_JSON", tmp_path / "report.json")
-    (tmp_path / "report.json").write_text(json.dumps({
-        "release_gate": "pass",
-        "findings": [{"category": "security.other"}],
-    }), encoding="utf-8")
-    monkeypatch.setattr(ev, "run_command", lambda *a, **k: {"exit": 0})
-    assert pn._a3_fixed(ev).status == "PASS"
+    report = {"release_gate": "pass",
+              "findings": [{"category": "security.other"}]}
+    monkeypatch.setattr(pn, "_read_agentteams_report", lambda stdout: report)
+    monkeypatch.setattr(ev, "run_command",
+                        lambda *a, **k: {"exit": 0, "stdout": "status=completed"})
+    assert pn._a3_agentteams(ev, True).status == "PASS"
 
 
 def test_a3_fails_when_vulnerable_category_remains(tmp_path, monkeypatch):
     ev = _evidence(tmp_path)
-    monkeypatch.setattr(pn, "REPORT_JSON", tmp_path / "report.json")
-    (tmp_path / "report.json").write_text(json.dumps({
-        "release_gate": "pass",
-        "findings": [{"category": "security.sql_injection"}],
-    }), encoding="utf-8")
-    monkeypatch.setattr(ev, "run_command", lambda *a, **k: {"exit": 0})
-    assert pn._a3_fixed(ev).status == "FAIL"
+    report = {"release_gate": "pass",
+              "findings": [{"category": "security.sql_injection"}]}
+    monkeypatch.setattr(pn, "_read_agentteams_report", lambda stdout: report)
+    monkeypatch.setattr(ev, "run_command",
+                        lambda *a, **k: {"exit": 0, "stdout": "status=completed"})
+    assert pn._a3_agentteams(ev, True).status == "FAIL"
 
 
 def test_a5_locked_eight_skills_and_six_assignments(tmp_path):

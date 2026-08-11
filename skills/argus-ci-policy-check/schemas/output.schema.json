@@ -1,13 +1,32 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "additionalProperties": false,
-  "required": ["schema_version", "status", "agent", "input_snapshot_id", "findings"],
+  "required": [
+    "schema_version",
+    "status",
+    "agent",
+    "input_snapshot_id",
+    "findings"
+  ],
   "properties": {
-    "schema_version": {"const": "1"},
-    "status": {"const": "completed"},
-    "agent": {"type": "string"},
-    "input_snapshot_id": {"type": "string"},
-    "findings": {"type": "array", "items": {"type": "object"}}
-  }
+    "schema_version": {
+      "const": "1"
+    },
+    "status": {
+      "const": "completed"
+    },
+    "agent": {
+      "type": "string"
+    },
+    "input_snapshot_id": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "additionalProperties": false
 }

@@ -201,58 +201,45 @@ def _cmd_audit(args) -> int:
 
 
 def _audit_agentteams(args, cfg, store, run_id: int, target: Path) -> int:
-    """Formal headless audit on real AgentTeams Workers and typed Tasks."""
-    from core.workspace_snapshot import WorkspaceSnapshotBuilder
-    from agentteams.hiclaw_client import HiclawClient, HiclawError
-    from agentteams.project_driver import ProjectDriver
-    from agentteams.worker_payloads import SnapshotReference
+    """Submit the audit to the Manager Agent and wait for its report.
+
+    The Manager Agent (LLM) creates the Project Room, coordinates the six
+    Workers conversationally, and publishes report.json. Argus only builds
+    the snapshot, submits the brief, and observes the result.
+    """
+    from agentteams.hiclaw_client import HiclawError
+    from agentteams.orchestrator import submit_managed_audit
 
     if _begin_audit(store, run_id, target, cfg) is None:
         return SYSTEM_ERROR
     store.transition(run_id, "PREFLIGHT", "SNAPSHOTTING")
-    archive = Path(".argus") / "snapshots" / f"{run_id}.zip"
-    bundle = WorkspaceSnapshotBuilder().build(target, archive)
-    snapshot_ref = SnapshotReference(
-        snapshot_id=bundle.snapshot.snapshot_id,
-        source_root="/root/hiclaw-fs/shared",
-        files=tuple(
-            {"path": f.path, "sha256": f.sha256, "size": f.size,
-             "language": f.language} for f in bundle.snapshot.files
-        ),
-        archive_path=str(archive.resolve()),
-        archive_sha256=bundle.archive_sha256,
-    )
-
     store.transition(run_id, "SNAPSHOTTING", "SCHEDULED")
     store.transition(run_id, "SCHEDULED", "RUNNING")
-    client = HiclawClient()
-    driver = ProjectDriver(client, Path.cwd())
-    request = {"project_id": f"argus-run-{run_id}", "run_id": f"run-{run_id}"}
-    # The dependency assessor only produces findings when the registry
-    # fixture travels in its input payload; without it every manifest entry
-    # is "unverified" and the vulnerable demo passes with zero findings.
-    registry = _load_registry(getattr(args, "registry_fixture", None))
+
     try:
-        outcome = driver.run(request, snapshot_ref,
-                             registry=registry,
-                             profile="phase-one-acceptance",
-                             acceptance_probe=None)
+        outcome = submit_managed_audit(
+            target,
+            run_id=f"run-{run_id}",
+            workspace=Path.cwd(),
+            title=str(target).replace("\\", "/"),
+            registry_fixture=Path(args.registry_fixture) if args.registry_fixture else None,
+            demo_invalid=bool(getattr(args, "demo_invalid_finding", False)),
+        )
     except HiclawError as exc:
         store.transition(run_id, "RUNNING", "PARTIAL")
         print(f"[argus] agentteams audit failed: {exc}", file=sys.stderr)
         return SYSTEM_ERROR
-    store.save_run(run_id, gate=outcome.gate)
-    print(f"[argus] project={outcome.project_id} status={outcome.status} "
-          f"gate={outcome.gate}")
-    if outcome.status != "completed":
-        store.transition(run_id, "RUNNING", "PARTIAL")
-        return SYSTEM_ERROR
-    for path in outcome.report_paths:
-        print(f"[argus] report={path}")
+
+    gate = outcome["gate"]
+    project_id = outcome["project_id"]
+    store.save_run(run_id, gate=gate)
+    print(f"[argus] project={project_id} status=completed gate={gate}")
+    report_path = f"projects/{project_id}/report.json"
+    print(f"[argus] report={report_path}")
     store.transition(run_id, "RUNNING", "META_REVIEW")
     store.transition(run_id, "META_REVIEW", "SYNTHESIZING")
     store.transition(run_id, "SYNTHESIZING", "COMPLETED")
-    return EXIT.get(outcome.gate, EXIT["unknown"])
+    return EXIT.get(gate, EXIT["unknown"])
 
 
 def _cmd_acceptance(args) -> int:

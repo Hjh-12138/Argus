@@ -35,18 +35,11 @@ class _FakeClient:
     pass
 
 
-class _FakeDriver:
-    last_snapshot = None
-
-    def __init__(self, *args, **kwargs):
-        self.calls = []
-
-    def run(self, request, snapshot, profile="", acceptance_probe=None, **kwargs):
-        from agentteams.project_driver import ProjectOutcome
-        type(self).last_snapshot = snapshot
-        return ProjectOutcome(project_id=request["project_id"], status="completed",
-                              gate="block", report_paths=["tasks/p/report/result.md"],
-                              task_states={})
+class _FakeSubmitter:
+    def __call__(self, target, run_id, *, workspace=None, agents=(), title="",
+                 registry_fixture=None, demo_invalid=False):
+        return {"project_id": f"argus-run-{run_id}", "gate": "block",
+                "report": {"release_gate": "block", "findings": [], "summary": ""}}
 
 
 def _run_agentteams_audit(tmp_path: Path) -> int:
@@ -56,7 +49,7 @@ def _run_agentteams_audit(tmp_path: Path) -> int:
     target.mkdir()
     (target / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
     args = SimpleNamespace(target=str(target), headless=True, engine="agentteams",
-                           block_on=None)
+                           block_on=None, registry_fixture=None)
     cfg = argus.load_config([], Path.cwd())
     try:
         return argus._audit_agentteams(args, cfg, store, run_id, target)
@@ -68,20 +61,10 @@ def test_agentteams_audit_uses_legal_state_prefix(tmp_path):
     with mock.patch("core.workspace_snapshot.WorkspaceSnapshotBuilder",
                     _FakeWorkspaceBuilder), \
          mock.patch("agentteams.hiclaw_client.HiclawClient", _FakeClient), \
-         mock.patch("agentteams.project_driver.ProjectDriver", _FakeDriver):
+         mock.patch("agentteams.orchestrator.submit_managed_audit", _FakeSubmitter()):
         exit_code = _run_agentteams_audit(tmp_path)
 
     assert exit_code == 2  # block gate
-
-
-def test_agentteams_audit_passes_built_archive_path(tmp_path):
-    with mock.patch("core.workspace_snapshot.WorkspaceSnapshotBuilder",
-                    _FakeWorkspaceBuilder), \
-         mock.patch("agentteams.hiclaw_client.HiclawClient", _FakeClient), \
-         mock.patch("agentteams.project_driver.ProjectDriver", _FakeDriver):
-        _run_agentteams_audit(tmp_path)
-
-    assert _FakeDriver.last_snapshot.archive_path.endswith(".zip")
 
 
 def test_state_machine_rejects_created_to_snapshotting(tmp_path):
@@ -104,13 +87,13 @@ def test_audit_agentteams_run_lands_completed(tmp_path):
     target = tmp_path / "target"
     target.mkdir()
     args = SimpleNamespace(target=str(target), headless=True, engine="agentteams",
-                           block_on=None)
+                           block_on=None, registry_fixture=None)
     cfg = argus.load_config([], Path.cwd())
     try:
         with mock.patch("core.workspace_snapshot.WorkspaceSnapshotBuilder",
                         _FakeWorkspaceBuilder), \
              mock.patch("agentteams.hiclaw_client.HiclawClient", _FakeClient), \
-             mock.patch("agentteams.project_driver.ProjectDriver", _FakeDriver):
+             mock.patch("agentteams.orchestrator.submit_managed_audit", _FakeSubmitter()):
             argus._audit_agentteams(args, cfg, store, run_id, target)
         assert store.get_status(run_id) == "COMPLETED"
     finally:

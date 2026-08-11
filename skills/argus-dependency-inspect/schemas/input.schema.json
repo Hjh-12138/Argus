@@ -1,29 +1,67 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "additionalProperties": false,
-  "required": ["schema_version", "run_id", "snapshot_id", "source_root", "files"],
+  "required": [
+    "schema_version",
+    "run_id",
+    "snapshot_id",
+    "source_root",
+    "files"
+  ],
   "properties": {
-    "schema_version": {"const": "1"},
-    "run_id": {"type": "string"},
-    "snapshot_id": {"type": "string"},
-    "source_root": {"type": "string"},
-    "profile": {"type": "string"},
-    "acceptance_probe": {"type": ["object", "null"]},
-    "registry": {"type": "object"},
+    "schema_version": {
+      "const": "1"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "snapshot_id": {
+      "type": "string"
+    },
+    "source_root": {
+      "type": "string"
+    },
+    "profile": {
+      "type": "string"
+    },
+    "acceptance_probe": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "registry": {
+      "type": "object"
+    },
     "files": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["path", "sha256", "size"],
+        "required": [
+          "path",
+          "sha256",
+          "size"
+        ],
         "properties": {
-          "path": {"type": "string"},
-          "sha256": {"type": "string"},
-          "size": {"type": "integer"},
-          "language": {"type": ["string", "null"]}
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       }
     }
-  }
+  },
+  "additionalProperties": false
 }

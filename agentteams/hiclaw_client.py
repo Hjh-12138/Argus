@@ -291,12 +291,32 @@ class HiclawClient:
         import time
         self._validate_id(task_id, "task")
         deadline = time.monotonic() + timeout_s
+        delays = (2, 4, 8, 15, 30)  # exponential backoff, cap at 30s
+        step = 0
         while time.monotonic() < deadline:
             record = self.get_task(task_id)["task"]
             if record.get("state") in terminal:
                 return record
-            time.sleep(5)
+            delay = delays[min(step, len(delays) - 1)]
+            time.sleep(delay)
+            step += 1
         raise HiclawError(f"task {task_id} did not reach terminal state")
+
+    def stop_mirror(self) -> None:
+        """Pause the mc-mirror background sync during heavy I/O operations."""
+        try:
+            self._docker_exec(
+                "supervisorctl", "stop", "mc-mirror", timeout=30)
+        except HiclawError:
+            pass  # already stopped or supervisorctl not available
+
+    def start_mirror(self) -> None:
+        """Resume the mc-mirror background sync."""
+        try:
+            self._docker_exec(
+                "supervisorctl", "start", "mc-mirror", timeout=30)
+        except HiclawError:
+            pass
 
     def get_worker_skill_observation(self, worker: str) -> dict:
         """Read the Worker's observed remote-Skill generation state."""
@@ -316,6 +336,40 @@ class HiclawClient:
         except HiclawError:
             return {}
 
+    def get_worker_effective_model(self, name: str) -> str | None:
+        """Read the desired model field exposed by the pinned Worker API."""
+        workers = self.get_workers(name)
+        if not workers:
+            return None
+        record = workers[0]
+        for key in ("model", "effectiveModel"):
+            value = record.get(key)
+            if isinstance(value, str):
+                return value
+        spec = record.get("spec")
+        if isinstance(spec, dict) and isinstance(spec.get("model"), str):
+            return spec["model"]
+        return None
+
+    def worker_configuration(self, name: str) -> dict:
+        """Return sanitized Worker state for preflight diagnostics."""
+        workers = self.get_workers(name)
+        if not workers:
+            return {"name": name, "phase": "missing", "model": None,
+                    "runtime": None, "image": None, "skills": []}
+        record = workers[0]
+        skills = self.get_worker_skill_observation(name)
+        ready = sorted({item.get("name") for item in skills.get("skills", [])
+                        if item.get("ready") and isinstance(item.get("name"), str)})
+        return {
+            "name": record.get("name", name),
+            "phase": record.get("phase"),
+            "model": self.get_worker_effective_model(name),
+            "runtime": record.get("runtime"),
+            "image": record.get("image"),
+            "skills": ready,
+        }
+
     def apply_worker_remote_skills(self, name: str, model: str,
                                    runtime: str, soul: str,
                                    source: str, auth_type: str,
@@ -323,8 +377,13 @@ class HiclawClient:
         """Apply a Worker CR that declares remoteSkills from the lock.
 
         Custom Argus Skills never travel through the built-in `--skills` flag.
+        Versions are read from the lock file — publish_nacos.py auto-updates
+        the lock after every publish, so no manual version management.
         """
+        from agentteams.model_config import validate_model
+
         self._validate_id(name, "worker")
+        model = validate_model(model)
         yaml_lines = [
             "apiVersion: agentteams.io/v1beta1",
             "kind: Worker",

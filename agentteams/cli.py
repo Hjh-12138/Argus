@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Argus thin CLI — sends audit requests to the Manager Agent via Matrix DM.
 
-Replaces the monolithic orchestrator.py. All coordination logic now lives
-in the Manager Agent (LLM-driven), which uses typed tasks to drive Workers.
+Coordination lives in the Manager Agent (LLM-driven), which hosts audits
+in Matrix Project Rooms where Workers collaborate conversationally.
 
 Usage:
     python -m agentteams.cli audit \\
@@ -33,7 +33,7 @@ FOCUS_TO_ASSESSORS = {
 
 def _send_audit_request(client: HiclawClient, payload: dict) -> str:
     """Send an audit request to the Manager via admin DM room."""
-    state = json.loads(client._docker_exec(
+    state = json.loads(client._docker_exec_in(
         "agentteams-manager",
         "cat", "/root/manager-workspace/state.json",
     ))
@@ -62,7 +62,7 @@ def _send_audit_request(client: HiclawClient, payload: dict) -> str:
 
     message += "\nPlease plan and dispatch the audit DAG."
 
-    client.send_project_message(admin_room, message)
+    client.send_admin_dm(admin_room, message)
     print(f"[argus] Audit request sent to Manager (run_id={run_id})")
     print(f"[argus] Focus: {focus} → Assessors: {assessors}")
     print(f"[argus] The Manager will create the project and dispatch workers.")
