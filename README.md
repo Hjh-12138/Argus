@@ -17,6 +17,8 @@ Preflight ──► Immutable Snapshot ──► Heuristic Scheduler
                     ┌───────────────────┼────────────────────┐
                     ▼                   ▼                    ▼
              Dependency Agent      Code/Sec Agents      Delivery Agent
+             (dep)            (code: 占位+可维护性    (delivery)
+                               sec: 静态安全)
                     └───────────────────┼────────────────────┘
                                         ▼
                                   Meta Evidence Gate
@@ -24,19 +26,33 @@ Preflight ──► Immutable Snapshot ──► Heuristic Scheduler
                               Synth + Deterministic Policy
                                         ▼
                           report.json / report.md / exit code
+                                        ▼
+                        demo/eval 评测集 + harness/gate 门禁（R0.4/R5.1/R5.2）
 
 AgentTeams control plane
-Project Room ── six Workers ── locked Skills ── MinIO task DAG
+Project Room ── 6 Workers ── locked Skills ── Nacos 配置中心 + MinIO task DAG
 ```
 
-核心不变量：
+**架构分层**——确定性形式层（已实现）+ 语义判断层（LLM）+ 机器强约束层（贯穿全程）：
 
-- 启发式调度先于模型，不允许模型删掉必需安全检查。
-- 所有 Agent 使用同一个不可变源码快照。
-- finding 必须携带 path、line、source hash 和可复核 evidence。
-- Meta 只核验证据，不创造 finding，也不决定 release gate。
-- required Agent 缺失或失败时不能伪装成功。
-- 源码、密钥、原始 prompt/response 和私有推理不进入 Matrix、trace 或报告。
+| 层 | 职责 | 状态 |
+|---|---|---|
+| **确定性形式层** | 不可变快照 + hash、确定性规则（含 11 条可维护性规则）、严格 schema、digest 引用、幂等键 + CAS、确定性 Meta 引用核验、确定性 policy | ✅ 已实现 |
+| **语义判断层** | `--engine agentteams` 下 Manager/Worker 为 LLM agent（OpenClaw），读源码做语义分析、证据研判、跨 agent 一致性判断；skill 侧 `_shared/llm_review.py` 对确定性 finding 做 LLM 深度复核（抑制 FP / 确认）。语义幻觉的独立核验为路线图 R1.2（未实现） | ⚠️ 部分实现 |
+| **机器强约束层** | P1 机器强约束优先于约定 · P2 生成与校验分离（LLM 自由生成、出不了机器闸门）· P3 fail-closed 单向保守 · P4 元数据与原文分离 · P5 独立验证不可自评 | ⚠️ 部分实现 |
+
+机器强约束（P1-P5）落地现状：P2/P3/P4 已实现——LLM/规则生成 finding → 确定性 Meta 核验 → fail-closed policy（缺 required agent 即 `unknown`），观测/报告只记元数据 + 脱敏 + HMAC；P1/P5 部分——DAG 校验器、字段级 ACL、语义幻觉独立核验在路线图 R0-R2（待落地），评测 ground truth 已人标注、独立于 Meta（P5 在评测层成立）。
+
+机器强约束（核心不变量，贯穿全程）：
+
+- **[P1/P2]** 启发式调度先于模型，不允许模型删掉必需安全检查（`MANDATORY_AGENTS`）。
+- **[确定性形式]** 所有 Agent 使用同一个不可变源码快照。
+- **[P4]** finding 必须携带 path、line、source hash 和可复核 evidence。
+- **[P2/P5]** Meta 只核验证据，不创造 finding，也不决定 release gate。
+- **[P3]** required Agent 缺失或失败时不能伪装成功（fail-closed，gate 置 `unknown`）。
+- **[P4]** 源码、密钥、原始 prompt/response 和私有推理不进入 Matrix、trace 或报告。
+
+**可维护性审查**（`code` agent，2026-08 新增）：11 条确定性规则（CODE-101..CODE-111）覆盖长函数/过多参数/单字母参数/深层嵌套/多布尔互斥/魔法数字/裸字符串枚举/映射 if 链/OR 链/平行数组/线性查找缺索引。规则引擎为纯 stdlib 模块，由本地 `CodeDetector` 与 AgentTeams skill `argus-code-maintainability-scan` 共享，parity 测试保证两侧一致；严重度为 low/medium，只产生 warn、永不 block 发布。
 
 ## 快速开始
 
@@ -44,7 +60,7 @@ Project Room ── six Workers ── locked Skills ── MinIO task DAG
 
 - Python 3.11+
 - Docker Desktop
-- AgentTeams v1.2.0-beta.1
+- AgentTeams v1.2.0-beta.1（依赖 Nacos 3.2+，作为 Skill 配置中心）
 - 本地开发测试：`pytest>=8.0`
 
 ```bash
@@ -62,6 +78,19 @@ docker exec agentteams-manager hiclaw get workers -o json
 ```
 
 预期 `agentteams-controller`、`agentteams-manager` 与六个 Argus Worker 均处于 Running。
+
+**Nacos 依赖**：AgentTeams 栈内自带 Nacos 3.2+，作为 Skill 配置中心。Argus 侧：
+
+- `skills/publish_nacos.py` 把锁定 Skill 发布到 Nacos（默认 `nacos://nacos:8848/public`，`--verify-only` 校验，`--publish` 发布）。
+- `agentteams/apply_worker_config.py` 按 `skills/skills.lock.json` 的 assignments 把 Skill 同步到各 Worker。
+- `skills/skills.lock.json` 固定 Nacos 发布源 + 完整 Skill 目录 digest；运行时分发禁止拉取 `latest`。
+
+Skill 发生变化后重发：
+
+```bash
+python skills/publish_nacos.py --version <锁内版本> --publish   # 默认连 127.0.0.1:8848 / namespace public
+python -m agentteams.apply_worker_config --workspace .          # 按锁内 assignments 同步到 Worker
+```
 
 ### 3. 运行三缺陷 Demo
 
@@ -106,24 +135,26 @@ Demo 可额外注入一个引用不存在路径的 finding，用于证明 Meta �
 | Worker | 职责 | 初赛状态 |
 |---|---|---|
 | `argus-dep` | 依赖声明与 registry 证据审计 | Running |
-| `argus-code` | 占位实现与代码契约审计 | Running |
+| `argus-code` | 占位实现 + 可维护性审查（11 条确定性规则） | Running |
 | `argus-sec` | 静态安全证据与密钥泄漏检查 | Running |
 | `argus-delivery` | CI、测试覆盖与交付链审计 | Running |
 | `argus-meta` | finding 证据质量门禁 | Running |
 | `argus-synth` | 确定性策略与报告物化 | Running |
 
-AgentTeams 负责 Worker 生命周期、Project Room、Matrix dispatch 和 MinIO task DAG；Argus 负责类型化任务、证据验证和确定性发布策略。
+AgentTeams 负责 Worker 生命周期、Project Room、Matrix dispatch、Nacos Skill 分发和 MinIO task DAG；Argus 负责类型化任务、证据验证和确定性发布策略。
 
 ## 核心 Skills
 
 | Skill | 使用者 | 作用 |
 |---|---|---|
 | `argus-finding-emit` | dep/code/sec/delivery | 生成符合 schema 的 finding 与 evidence |
+| `argus-code-rule-scan` | code | 占位实现检测（CODE-001） |
+| `argus-code-maintainability-scan` | code | 可维护性审查（CODE-101..CODE-111，11 条规则） |
 | `argus-evidence-verify` | meta | 核验路径、行号、快照 hash 与证据一致性 |
 | `argus-release-policy-evaluate` | synth | 根据 VERIFIED finding 计算 pass/warn/block/unknown |
 | `argus-report-materialize` | synth | 原子生成 JSON 与 Markdown 报告 |
 
-`skills/skills.lock.json` 固定完整 Skill 目录 digest。分发前校验 digest，禁止运行时拉取 `latest`。
+`skills/skills.lock.json` 固定 Nacos 发布源 + 完整 Skill 目录 digest。分发前校验 digest，禁止运行时拉取 `latest`。
 
 ## 安全边界
 
@@ -146,7 +177,13 @@ python -m pytest tests/ -v
 
 ## 当前进展
 
-初赛核心链路已完成：本地 headless 三缺陷 Demo、六 Worker AgentTeams 编排、锁定 Skill 分发、Project Room、MinIO task DAG、Meta 幻觉拦截、确定性 release gate、原子报告和 builtin 结构化 trace recorder。
+初赛核心链路已完成：本地 headless 三缺陷 Demo、六 Worker AgentTeams 编排、Nacos 锁定 Skill 分发、Project Room、MinIO task DAG、Meta 幻觉拦截、确定性 release gate、原子报告和 builtin 结构化 trace recorder。
+
+已补的工程能力：
+
+- **代码可维护性审查**：`code` agent 新增 11 条确定性规则（CODE-101..CODE-111），本地引擎与 AgentTeams skill 共享同一纯 stdlib 规则引擎，parity 测试保证两侧一致。
+- **评测门禁**：`demo/eval/` 评测集（9 场景：simple/complex/abnormal）+ `harness.py`（R5.1，语义键对齐算 recall/precision/gate 一致性）+ `gate.py`（R5.2，`eval.lock.json` 版本 pin、逐场景不回归、可选 token 成本预算）。
+- **观测**：AI 网关（`agentteams-controller:8080`，Higress）按 `ai_consumer` 输出每 agent token/耗时指标，`agentteams/gateway_metrics.py` 聚合；`--token-cost` 已接入评测门禁成本维度。
 
 ## License
 
