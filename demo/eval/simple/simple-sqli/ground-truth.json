@@ -1,0 +1,26 @@
+{
+  "schema_version": "1",
+  "scenario_id": "simple-sqli",
+  "category": "simple",
+  "title": "Single SQL injection",
+  "description": "一个 SQL 查询用字符串拼接直接插入未过滤的用户输入。隔离测 sec detector 的召回。",
+  "expected_gate": "block",
+  "expected_findings": [
+    {
+      "key": "sqli-1",
+      "agent": "sec",
+      "category": "security.sql_injection",
+      "severity": "critical",
+      "file": "app/search.py",
+      "line_start": 2,
+      "line_end": 2,
+      "cwe": "CWE-89",
+      "title": "SQL query concatenates untrusted input"
+    }
+  ],
+  "annotation": {
+    "annotator": "human-review",
+    "independent_of": "meta-detector",
+    "notes": "ground truth 由人标注缺陷语义，不依赖 Argus/Meta 输出（P5）。"
+  }
+}

@@ -17,18 +17,24 @@ from agents.dep.tools import load_registry_fixture
 from agents.sec.detector import SecDetector
 from agents.synth.tools import synthesize
 from core.config import ConfigValidationError, effective_config_summary, load_config
+from core.degradation import classify_failures
 from core.meta import MetaReviewer
 from core.preflight import preflight
+from core.reconcile import reconcile_report
 from core.report import ReportWriteError, write_report
+from core.retry import run_with_retry
 from core.scheduler import Change, heuristic_schedule
 from core.schemas import AgentResult, Evidence, Finding
 from core.snapshot import SnapshotBuilder
 from core.state import INVALID_TRANSITION, StateStore
+from core.verify import verify_agent_result
 
 EXIT = {"pass": 0, "warn": 1, "block": 2, "unknown": 3}
 SYSTEM_ERROR = 4
 CANCELLED = 130
 IMPLEMENTED_ASSESSORS = {"dep", "code", "sec", "delivery"}
+ASSESSOR_MAX_ATTEMPTS = 3   # R3.1 节点级重试：初始 1 次 + 重试 2 次
+ASSESSOR_RETRY_DELAY_S = 1.0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -55,6 +61,11 @@ def build_parser() -> argparse.ArgumentParser:
     pf = sub.add_parser("preflight", help="Validate target and environment")
     pf.add_argument("--target", required=True)
 
+    resume = sub.add_parser("resume", help="Resume a run paused for human decision")
+    resume.add_argument("--run-id", required=True)
+    resume.add_argument("--decision", choices=["retry", "skip", "unknown", "abort"],
+                        required=True)
+
     acceptance = sub.add_parser("acceptance", help="Phase-one acceptance commands")
     acceptance_sub = acceptance.add_subparsers(dest="acceptance_cmd", required=True)
     phase_one = acceptance_sub.add_parser("phase-one", help="Run A1-A8 acceptance")
@@ -74,6 +85,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.cmd == "preflight":
             return _cmd_preflight(args)
+        if args.cmd == "resume":
+            return _cmd_resume(args)
         if args.cmd == "acceptance":
             return _cmd_acceptance(args)
         return _cmd_audit(args)
@@ -98,6 +111,19 @@ def _cmd_preflight(args) -> int:
         "unsafe_links": result.unsafe_links,
     }, ensure_ascii=False, indent=2))
     return 0 if result.ok else SYSTEM_ERROR
+
+
+def _cmd_resume(args) -> int:
+    store = StateStore(Path(".argus/state.db"))
+    try:
+        target = store.resume(args.run_id, args.decision)
+    except (KeyError, INVALID_TRANSITION, ValueError) as exc:
+        print(f"[argus] resume failed: {exc}", file=sys.stderr)
+        return SYSTEM_ERROR
+    finally:
+        store.close()
+    print(f"[argus] run={args.run_id} decision={args.decision} status={target}")
+    return 0
 
 
 def _begin_audit(store, run_id: str, target: Path, cfg) -> object | None:
@@ -156,6 +182,14 @@ def _cmd_audit(args) -> int:
         if args.demo_invalid_finding:
             _inject_demo_hallucination(snapshot, results)
 
+        degradation = classify_failures(tuple(results))
+        if degradation.not_audited_domains:
+            print(f"[argus] NOT_AUDITED domains: "
+                  f"{', '.join(degradation.not_audited_domains)}")
+        if degradation.blocking_agents:
+            print(f"[argus] blocking critical agents failed: "
+                  f"{', '.join(degradation.blocking_agents)}")
+
         store.transition(run_id, "RUNNING", "META_REVIEW")
         decisions = MetaReviewer().review(snapshot, tuple(results))
         for decision in decisions:
@@ -166,7 +200,8 @@ def _cmd_audit(args) -> int:
         store.transition(run_id, "META_REVIEW", "SYNTHESIZING")
         expected_required = {r.agent for r in results if r.required}
         policy, report_data = synthesize(
-            run_id, snapshot, tuple(results), decisions, cfg, coverage)
+            run_id, snapshot, tuple(results), decisions, cfg, coverage,
+            not_audited_domains=degradation.not_audited_domains)
         # 若 schedule 需要已实现的 required Agent 但 result 缺失，重算 unknown。
         completed = {r.agent for r in results if r.status == "completed"}
         if expected_required - completed:
@@ -175,7 +210,16 @@ def _cmd_audit(args) -> int:
             policy = evaluate_policy(decisions, results, cfg,
                                      expected_required=expected_required)
             report_data = render_report(run_id, snapshot, tuple(results), decisions,
-                                        policy, coverage=coverage)
+                                        policy, coverage=coverage,
+                                        not_audited_domains=degradation.not_audited_domains)
+
+        # R4.1 报告溯源对账：gate 从共享状态重算，不信任报告自述。
+        recon = reconcile_report(report_data, tuple(results), decisions, policy)
+        if recon.gate_mismatch or recon.unfounded_finding_ids or recon.inconsistent_finding_ids:
+            print(f"[argus] reconciliation: gate_mismatch={recon.gate_mismatch} "
+                  f"unfounded={recon.unfounded_finding_ids} "
+                  f"inconsistent={recon.inconsistent_finding_ids}")
+        report_data = recon.repaired_report
 
         json_path, md_path = write_report(cfg.output.directory, report_data)
         store.save_run(run_id, gate=policy.release_gate)
@@ -224,6 +268,7 @@ def _audit_agentteams(args, cfg, store, run_id: int, target: Path) -> int:
             title=str(target).replace("\\", "/"),
             registry_fixture=Path(args.registry_fixture) if args.registry_fixture else None,
             demo_invalid=bool(getattr(args, "demo_invalid_finding", False)),
+            cfg=cfg,
         )
     except HiclawError as exc:
         store.transition(run_id, "RUNNING", "PARTIAL")
@@ -232,6 +277,17 @@ def _audit_agentteams(args, cfg, store, run_id: int, target: Path) -> int:
 
     gate = outcome["gate"]
     project_id = outcome["project_id"]
+    recon = outcome.get("reconciliation")
+    if recon:
+        if recon.get("gate_mismatch"):
+            print(f"[argus] reconciliation: LLM gate={recon.get('llm_gate')} "
+                  f"recomputed={recon.get('recomputed_gate')}")
+        if recon.get("unfounded_finding_ids"):
+            print(f"[argus] reconciliation unfounded (fabricated): "
+                  f"{recon['unfounded_finding_ids']}")
+        if recon.get("inconsistent_finding_ids"):
+            print(f"[argus] reconciliation inconsistent (tampered): "
+                  f"{recon['inconsistent_finding_ids']}")
     store.save_run(run_id, gate=gate)
     print(f"[argus] project={project_id} status=completed gate={gate}")
     report_path = f"projects/{project_id}/report.json"
@@ -295,13 +351,25 @@ def _run_assessors(snapshot, selected: set[str], registry: dict) -> tuple[AgentR
     }
     out: list[AgentResult] = []
     for agent in sorted(selected):
-        try:
-            findings = detectors[agent]()
-            out.append(_agent_result(agent, snapshot.snapshot_id, "completed", findings))
-        except Exception as exc:
+        outcome = run_with_retry(detectors[agent], attempts=ASSESSOR_MAX_ATTEMPTS,
+                                 delay_s=ASSESSOR_RETRY_DELAY_S)
+        if not outcome.ok:
+            # 重试耗尽 → 节点级熔断（非类型级），标 CIRCUIT_OPEN 并放行链路其余节点。
             out.append(_agent_result(agent, snapshot.snapshot_id, "failed", (),
-                                     error_code="AGENT_FAILED",
-                                     error_message=str(exc)[:500]))
+                                     error_code="AGENT_CIRCUIT_OPEN",
+                                     error_message=str(outcome.error)[:500]))
+            continue
+        findings = outcome.value
+        result = _agent_result(agent, snapshot.snapshot_id, "completed", findings)
+        verification = verify_agent_result(snapshot, result)
+        if not verification.passed:
+            for fid in verification.hallucinated_finding_ids:
+                print(f"[argus] boundary rejected {fid}: "
+                      f"{','.join(verification.reason_codes)}")
+            # 幻觉 finding 在源头拦截，不进下游（fail-closed）。
+            result = _agent_result(agent, snapshot.snapshot_id, "completed",
+                                   verification.clean_findings)
+        out.append(result)
     return tuple(out)
 
 

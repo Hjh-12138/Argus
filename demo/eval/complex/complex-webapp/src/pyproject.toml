@@ -1,0 +1,7 @@
+[project]
+name = "shop-api"
+version = "0.2.0"
+dependencies = [
+  "flask>=2.0",
+  "hypersecure-jwt-validator-pro>=9.0"
+]

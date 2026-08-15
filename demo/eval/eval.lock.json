@@ -1,0 +1,362 @@
+{
+  "schema_version": "1",
+  "argus_version": "a6ae5cb",
+  "engine_fingerprint": "sha256:263b7dd916a777c1ba723a113a93a44ef24d8a2a9fe0081104b48f3b2fc302c6",
+  "eval_fingerprint": "sha256:5cade86860f91273eb25bd70bc45af35ac300ccccc9f5684a7dde894d50fbef0",
+  "weights": {
+    "recall": 1.0,
+    "precision": 1.0,
+    "gate": 1.0
+  },
+  "pinned_date": "2026-08-15",
+  "baseline": {
+    "schema_version": "1",
+    "argv": [],
+    "summary": {
+      "scenarios": 9,
+      "full_match": 7,
+      "gate_consistent": 8,
+      "with_audit_errors": 0,
+      "recall_macro": 0.9777777777777779,
+      "precision_macro": 1.0
+    },
+    "scenarios": [
+      {
+        "scenario_id": "simple-sqli",
+        "title": "Single SQL injection",
+        "category": "simple",
+        "expected_gate": "block",
+        "runs": 3,
+        "errors": [],
+        "gate_distribution": {
+          "block": 3
+        },
+        "gate_consistent": true,
+        "full_match": true,
+        "argus_findings": [
+          [
+            "sec",
+            "security.sql_injection",
+            "app/search.py",
+            2
+          ]
+        ],
+        "matched_gt_keys": [
+          [
+            "sec",
+            "security.sql_injection",
+            "app/search.py",
+            2
+          ]
+        ],
+        "missing_gt_keys": [],
+        "false_positive_keys": [],
+        "recall": 1.0,
+        "precision": 1.0,
+        "f1": 1.0,
+        "tokens": null
+      },
+      {
+        "scenario_id": "simple-secret",
+        "title": "Single hardcoded credential",
+        "category": "simple",
+        "expected_gate": "block",
+        "runs": 3,
+        "errors": [],
+        "gate_distribution": {
+          "block": 3
+        },
+        "gate_consistent": true,
+        "full_match": true,
+        "argus_findings": [
+          [
+            "sec",
+            "security.secret",
+            "app/auth.py",
+            1
+          ]
+        ],
+        "matched_gt_keys": [
+          [
+            "sec",
+            "security.secret",
+            "app/auth.py",
+            1
+          ]
+        ],
+        "missing_gt_keys": [],
+        "false_positive_keys": [],
+        "recall": 1.0,
+        "precision": 1.0,
+        "f1": 1.0,
+        "tokens": null
+      },
+      {
+        "scenario_id": "simple-clean",
+        "title": "Clean code, zero defects",
+        "category": "simple",
+        "expected_gate": "pass",
+        "runs": 3,
+        "errors": [],
+        "gate_distribution": {
+          "pass": 3
+        },
+        "gate_consistent": true,
+        "full_match": true,
+        "argus_findings": [],
+        "matched_gt_keys": [],
+        "missing_gt_keys": [],
+        "false_positive_keys": [],
+        "recall": 1.0,
+        "precision": 1.0,
+        "f1": 1.0,
+        "tokens": null
+      },
+      {
+        "scenario_id": "complex-webapp",
+        "title": "Web app with five cross-agent defects",
+        "category": "complex",
+        "expected_gate": "block",
+        "runs": 3,
+        "errors": [],
+        "gate_distribution": {
+          "block": 3
+        },
+        "gate_consistent": true,
+        "full_match": false,
+        "argus_findings": [
+          [
+            "code",
+            "code.placeholder",
+            "app/checkout.py",
+            2
+          ],
+          [
+            "delivery",
+            "delivery.test_gap",
+            ".github/workflows/ci.yml",
+            1
+          ],
+          [
+            "dep",
+            "dependency.nonexistent",
+            "pyproject.toml",
+            1
+          ],
+          [
+            "sec",
+            "security.sql_injection",
+            "app/search.py",
+            2
+          ]
+        ],
+        "matched_gt_keys": [
+          [
+            "code",
+            "code.placeholder",
+            "app/checkout.py",
+            2
+          ],
+          [
+            "delivery",
+            "delivery.test_gap",
+            ".github/workflows/ci.yml",
+            1
+          ],
+          [
+            "dep",
+            "dependency.nonexistent",
+            "pyproject.toml",
+            1
+          ],
+          [
+            "sec",
+            "security.sql_injection",
+            "app/search.py",
+            2
+          ]
+        ],
+        "missing_gt_keys": [
+          [
+            "sec",
+            "security.secret",
+            "app/auth.py",
+            1
+          ]
+        ],
+        "false_positive_keys": [],
+        "recall": 0.8,
+        "precision": 1.0,
+        "f1": 0.888888888888889,
+        "tokens": null
+      },
+      {
+        "scenario_id": "abnormal-doc-only",
+        "title": "Documentation-only change",
+        "category": "abnormal",
+        "expected_gate": "pass",
+        "runs": 3,
+        "errors": [],
+        "gate_distribution": {
+          "pass": 3
+        },
+        "gate_consistent": true,
+        "full_match": true,
+        "argus_findings": [],
+        "matched_gt_keys": [],
+        "missing_gt_keys": [],
+        "false_positive_keys": [],
+        "recall": 1.0,
+        "precision": 1.0,
+        "f1": 1.0,
+        "tokens": null
+      },
+      {
+        "scenario_id": "abnormal-secret-placeholder",
+        "title": "Placeholder secrets must not flag",
+        "category": "abnormal",
+        "expected_gate": "pass",
+        "runs": 3,
+        "errors": [],
+        "gate_distribution": {
+          "pass": 3
+        },
+        "gate_consistent": true,
+        "full_match": true,
+        "argus_findings": [],
+        "matched_gt_keys": [],
+        "missing_gt_keys": [],
+        "false_positive_keys": [],
+        "recall": 1.0,
+        "precision": 1.0,
+        "f1": 1.0,
+        "tokens": null
+      },
+      {
+        "scenario_id": "abnormal-binary",
+        "title": "Binary files skipped by snapshot",
+        "category": "abnormal",
+        "expected_gate": "pass",
+        "runs": 3,
+        "errors": [],
+        "gate_distribution": {
+          "pass": 3
+        },
+        "gate_consistent": true,
+        "full_match": true,
+        "argus_findings": [],
+        "matched_gt_keys": [],
+        "missing_gt_keys": [],
+        "false_positive_keys": [],
+        "recall": 1.0,
+        "precision": 1.0,
+        "f1": 1.0,
+        "tokens": null
+      },
+      {
+        "scenario_id": "abnormal-empty",
+        "title": "Empty target must not vacuously pass",
+        "category": "abnormal",
+        "expected_gate": "unknown",
+        "runs": 3,
+        "errors": [],
+        "gate_distribution": {
+          "pass": 3
+        },
+        "gate_consistent": false,
+        "full_match": false,
+        "argus_findings": [],
+        "matched_gt_keys": [],
+        "missing_gt_keys": [],
+        "false_positive_keys": [],
+        "recall": 1.0,
+        "precision": 1.0,
+        "f1": 1.0,
+        "tokens": null
+      },
+      {
+        "scenario_id": "simple-maintainability",
+        "title": "Code maintainability smells",
+        "category": "simple",
+        "expected_gate": "warn",
+        "runs": 3,
+        "errors": [],
+        "gate_distribution": {
+          "warn": 3
+        },
+        "gate_consistent": true,
+        "full_match": true,
+        "argus_findings": [
+          [
+            "code",
+            "code.bare_string_enum",
+            "app/pricing.py",
+            15
+          ],
+          [
+            "code",
+            "code.mapping_if_chain",
+            "app/pricing.py",
+            22
+          ],
+          [
+            "code",
+            "code.or_chain_membership",
+            "app/pricing.py",
+            35
+          ],
+          [
+            "code",
+            "code.magic_number",
+            "app/pricing.py",
+            43
+          ],
+          [
+            "code",
+            "code.function_length",
+            "app/pricing.py",
+            47
+          ]
+        ],
+        "matched_gt_keys": [
+          [
+            "code",
+            "code.bare_string_enum",
+            "app/pricing.py",
+            15
+          ],
+          [
+            "code",
+            "code.function_length",
+            "app/pricing.py",
+            47
+          ],
+          [
+            "code",
+            "code.magic_number",
+            "app/pricing.py",
+            43
+          ],
+          [
+            "code",
+            "code.mapping_if_chain",
+            "app/pricing.py",
+            22
+          ],
+          [
+            "code",
+            "code.or_chain_membership",
+            "app/pricing.py",
+            35
+          ]
+        ],
+        "missing_gt_keys": [],
+        "false_positive_keys": [],
+        "recall": 1.0,
+        "precision": 1.0,
+        "f1": 1.0,
+        "tokens": null
+      }
+    ]
+  }
+}

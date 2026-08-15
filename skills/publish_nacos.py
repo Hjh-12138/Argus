@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish and lock the eight Argus Skills into a local/private Nacos AI
+"""Publish and lock the nine Argus Skills into a local/private Nacos AI
 Registry using the admin HTTP API with the Nacos server-identity header.
 
 The private registry must reject overwriting an already published
@@ -35,11 +35,13 @@ SKILLS = (
     "argus-evidence-verify",
     "argus-release-policy-evaluate",
     "argus-report-materialize",
+    "argus-code-maintainability-scan",
 )
 
 ASSIGNMENTS = {
     "argus-dep": ["argus-dependency-inspect", "argus-finding-emit"],
-    "argus-code": ["argus-code-rule-scan", "argus-finding-emit"],
+    "argus-code": ["argus-code-rule-scan", "argus-code-maintainability-scan",
+                   "argus-finding-emit"],
     "argus-sec": ["argus-secret-scan", "argus-finding-emit"],
     "argus-delivery": ["argus-ci-policy-check", "argus-finding-emit"],
     "argus-meta": ["argus-evidence-verify"],

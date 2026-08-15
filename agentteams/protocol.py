@@ -23,6 +23,7 @@ class TaskState(str, Enum):
     FAILED = "FAILED"
     TIMED_OUT = "TIMED_OUT"
     CONFLICT = "CONFLICT"
+    HUMAN_WAIT = "HUMAN_WAIT"
 
 
 TERMINAL_STATES = {

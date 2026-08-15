@@ -1,0 +1,14 @@
+{
+  "schema_version": "1",
+  "scenario_id": "abnormal-binary",
+  "category": "abnormal",
+  "title": "Binary files skipped by snapshot",
+  "description": "目标含一个 .png 二进制 + 干净源码。快照应跳过二进制（coverage 记 skip），不对其产出 finding。",
+  "expected_gate": "pass",
+  "expected_findings": [],
+  "annotation": {
+    "annotator": "human-review",
+    "independent_of": "meta-detector",
+    "notes": "二进制不可审，正确行为是快照跳过 + 零 finding。"
+  }
+}

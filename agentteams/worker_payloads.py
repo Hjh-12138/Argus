@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 ROLE_SKILLS = {
     "dep": "argus-dependency-inspect",
-    "code": "argus-code-rule-scan",
+    "code": ("argus-code-rule-scan", "argus-code-maintainability-scan"),
     "sec": "argus-secret-scan",
     "delivery": "argus-ci-policy-check",
     "meta": "argus-evidence-verify",
@@ -39,7 +39,8 @@ WORKERS: dict[str, WorkerDefinition] = {
     "code": WorkerDefinition(
         "code", "argus-code",
         "Code auditor. Validate correctness and state contracts without executing target code.",
-        ("argus-code-rule-scan", "argus-finding-emit"),
+        ("argus-code-rule-scan", "argus-finding-emit",
+         "argus-code-maintainability-scan"),
     ),
     "sec": WorkerDefinition(
         "sec", "argus-sec",

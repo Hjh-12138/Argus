@@ -114,11 +114,11 @@ def test_a3_fails_when_vulnerable_category_remains(tmp_path, monkeypatch):
     assert pn._a3_agentteams(ev, True).status == "FAIL"
 
 
-def test_a5_locked_eight_skills_and_six_assignments(tmp_path):
+def test_a5_locked_nine_skills_and_six_assignments(tmp_path):
     ev = _evidence(tmp_path)
     item = pn._a5_skill_lock(ev, False)
     assert item.status == "PASS"
-    assert "8" in item.detail
+    assert "9" in item.detail
 
 
 def test_a6_records_suite_counts(tmp_path, monkeypatch):

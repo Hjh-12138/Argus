@@ -80,7 +80,7 @@ class PublishNacosTest(unittest.TestCase):
     def _matching_archives(self) -> dict[str, bytes]:
         return {name: _nacos_archive(name) for name in pn.SKILLS}
 
-    def test_validate_skills_requires_eight_complete_packages(self):
+    def test_validate_skills_requires_nine_complete_packages(self):
         digests = pn.validate_skills()
 
         self.assertEqual(set(digests), set(pn.SKILLS))
@@ -137,7 +137,7 @@ class PublishNacosTest(unittest.TestCase):
         self.assertEqual(lock["schema_version"], "2")
         self.assertEqual(lock["source"], "nacos://nacos:secret@nacos:8848/argus")
         self.assertEqual(lock["auth_type"], "nacos")
-        self.assertEqual(len(lock["skills"]), 8)
+        self.assertEqual(len(lock["skills"]), 9)
         self.assertEqual(len(lock["assignments"]), 6)
         self.assertTrue(all(item["version"] == "0.0.1" for item in lock["skills"]))
 

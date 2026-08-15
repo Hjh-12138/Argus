@@ -5,10 +5,12 @@ from core.policy import evaluate_policy
 from core.report import render_report, write_report
 
 
-def synthesize(run_id, snapshot, agent_results, meta_decisions, config, coverage=None):
+def synthesize(run_id, snapshot, agent_results, meta_decisions, config,
+               coverage=None, not_audited_domains=()):
     expected = {r.agent for r in agent_results if r.required}
     policy = evaluate_policy(meta_decisions, agent_results, config,
                              expected_required=expected)
     report = render_report(run_id, snapshot, tuple(agent_results),
-                           tuple(meta_decisions), policy, coverage=coverage)
+                           tuple(meta_decisions), policy, coverage=coverage,
+                           not_audited_domains=not_audited_domains)
     return policy, report

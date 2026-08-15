@@ -31,7 +31,8 @@ def submit_managed_audit(target: Path, run_id: str, *, workspace: Path | None = 
                          agents: tuple[str, ...] = ASSESSORS,
                          title: str = "",
                          registry_fixture: Path | None = None,
-                         demo_invalid: bool = False) -> dict:
+                         demo_invalid: bool = False,
+                         cfg=None) -> dict:
     """Build and publish the snapshot, submit the brief to the Manager, wait."""
     from core.workspace_snapshot import WorkspaceSnapshotBuilder
 
@@ -51,10 +52,12 @@ def submit_managed_audit(target: Path, run_id: str, *, workspace: Path | None = 
         client.publish_shared_file(
             f"projects/{project_id}/registry-fixture.json", Path(registry_fixture))
 
-    admin_room = _admin_dm_room(client)
+    manager = _manager_record(client)
+    admin_room = _admin_dm_room(client, manager)
+    matrix_domain = _manager_matrix_domain(manager)
     workers = [f"argus-{agent}" for agent in agents]
     scope_lines = "\n".join(
-        f"- @{name}:matrix-local.agentteams.io:18080" for name in workers)
+        f"- @{name}:{matrix_domain}" for name in workers)
     notes = []
     if registry_fixture is not None and Path(registry_fixture).is_file():
         notes.append(
@@ -68,7 +71,7 @@ def submit_managed_audit(target: Path, run_id: str, *, workspace: Path | None = 
     notes_block = "\n".join(f"- {note}" for note in notes)
 
     brief = (
-        f"**New Argus Audit**\n\n"
+        f"@manager **New Argus Audit**\n\n"
         f"Run ID: `{run_id}`\n"
         f"Project ID: `{project_id}`\n"
         f"Title: {title or f'Argus audit {run_id}'}\n\n"
@@ -89,8 +92,24 @@ def submit_managed_audit(target: Path, run_id: str, *, workspace: Path | None = 
         f"Decide the gate yourself from the collected evidence; do not wait "
         f"for further instructions."
     )
-    client.send_admin_dm(admin_room, brief)
-    return wait_for_report(client, project_id)
+    # The Manager only routes messages that mention it (bindings=0 otherwise),
+    # so the brief must carry an explicit @manager mention to be processed.
+    client.send_admin_dm(admin_room, brief,
+                         mentions=[f"@manager:{matrix_domain}"])
+    report = wait_for_report(client, project_id)
+    # R4.1 对账：读回共享状态重算 gate，不信任 LLM 自述的 gate。
+    llm_gate = report.get("release_gate")
+    if cfg is None:
+        from core.config import load_config
+        cfg = load_config([], Path.cwd())
+    from agentteams.reconcile_managed import reconcile_managed_report
+    report = reconcile_managed_report(client, project_id, report, cfg)
+    recon = report.get("reconciliation", {})
+    recon["llm_gate"] = llm_gate
+    report["reconciliation"] = recon
+    # Consumers (cli.argus._audit_agentteams) read a flat dict with "gate" and
+    # "project_id" on top of the report fields.
+    return {"gate": report["release_gate"], "project_id": project_id, **report}
 
 
 def wait_for_report(client: HiclawClient, project_id: str,
@@ -116,7 +135,32 @@ def wait_for_report(client: HiclawClient, project_id: str,
         f"{int(timeout_s)}s")
 
 
-def _admin_dm_room(client: HiclawClient) -> str:
+def _manager_record(client: HiclawClient) -> dict:
+    raw = client._docker_exec_in(
+        "agentteams-controller", "hiclaw", "get", "managers", "default",
+        "-o", "json")
+    try:
+        manager = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ManagerError("Manager resource returned invalid JSON") from exc
+    if not isinstance(manager, dict):
+        raise ManagerError("Manager resource returned unexpected JSON")
+    return manager
+
+
+def _manager_matrix_domain(manager: dict) -> str:
+    matrix_user = manager.get("matrixUserID")
+    if not isinstance(matrix_user, str) or ":" not in matrix_user:
+        raise ManagerError("Manager Matrix identity is not ready")
+    return matrix_user.split(":", 1)[1]
+
+
+def _admin_dm_room(client: HiclawClient, manager: dict | None = None) -> str:
+    current = manager or _manager_record(client)
+    room = current.get("roomID")
+    if isinstance(room, str) and room:
+        return room
+
     state = json.loads(client._docker_exec(
         "cat", "/root/manager-workspace/state.json"))
     room = state.get("admin_dm_room_id")

@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Argus runtime state (audit runs / acceptance evidence / snapshots)
+.argus/
+
+# Superpowers SDD workspace (per-plan ledger, briefs, review reports)
+.superpowers/
+
+# Office temp / backup
+~$*.pptx
+*.pptx.bak
+
+# Competition deliverable PPT (not published to public repo)
+docs/*.pptx
+
+# Stray memory-file copy (was accidentally created at repo root; kept out of git)
+C*Users31457.claudeprojects*
+
+# Local config / secrets
+.env
+*.env

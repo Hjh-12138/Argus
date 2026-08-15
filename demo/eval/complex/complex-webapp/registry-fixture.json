@@ -1,0 +1,5 @@
+{
+  "flask": {"exists": true},
+  "hypersecure-jwt-validator-pro": {"exists": false},
+  "pytest": {"exists": true}
+}

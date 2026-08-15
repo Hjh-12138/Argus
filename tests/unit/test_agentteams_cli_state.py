@@ -37,7 +37,7 @@ class _FakeClient:
 
 class _FakeSubmitter:
     def __call__(self, target, run_id, *, workspace=None, agents=(), title="",
-                 registry_fixture=None, demo_invalid=False):
+                 registry_fixture=None, demo_invalid=False, cfg=None):
         return {"project_id": f"argus-run-{run_id}", "gate": "block",
                 "report": {"release_gate": "block", "findings": [], "summary": ""}}
 

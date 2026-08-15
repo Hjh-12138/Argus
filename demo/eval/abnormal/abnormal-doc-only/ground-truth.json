@@ -1,0 +1,14 @@
+{
+  "schema_version": "1",
+  "scenario_id": "abnormal-doc-only",
+  "category": "abnormal",
+  "title": "Documentation-only change",
+  "description": "目标只含 .md 文档。调度器应有意义地跳过（intentional skip），不派任何 assessor，直接 pass。",
+  "expected_gate": "pass",
+  "expected_findings": [],
+  "annotation": {
+    "annotator": "human-review",
+    "independent_of": "meta-detector",
+    "notes": "doc-only 变更无代码可审，pass 是合理结果（非 fail-open：确实没有可审对象）。"
+  }
+}

@@ -109,7 +109,7 @@ class SkillDirectoryDigestTests(unittest.TestCase):
         lock = json.loads(
             (workspace / "skills/skills.lock.json").read_text(encoding="utf-8"))
 
-        self.assertEqual(len(lock["skills"]), 8)
+        self.assertEqual(len(lock["skills"]), 9)
         for item in lock["skills"]:
             actual = hiclaw_client.skill_directory_digest(
                 workspace / "skills" / item["name"])

@@ -298,8 +298,8 @@ def _a5_skill_lock(evidence: EvidenceCollector, live: bool) -> AcceptanceItem:
         return AcceptanceItem("A5", "FAIL", "skills.lock.json missing")
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
     names = {s["name"] for s in lock.get("skills", [])}
-    if len(names) != 8:
-        return AcceptanceItem("A5", "FAIL", f"expected 8 unique skills, got {len(names)}")
+    if len(names) != 9:
+        return AcceptanceItem("A5", "FAIL", f"expected 9 unique skills, got {len(names)}")
     assignments = lock.get("assignments", {})
     if len(assignments) != 6:
         return AcceptanceItem("A5", "FAIL",
@@ -318,8 +318,8 @@ def _a5_skill_lock(evidence: EvidenceCollector, live: bool) -> AcceptanceItem:
         if bad:
             return AcceptanceItem("A5", "FAIL", "; ".join(bad))
         return AcceptanceItem("A5", "PASS",
-                              "8 unique skills locked and observed ready on 6 workers")
-    return AcceptanceItem("A5", "PASS", "8 unique skills locked")
+                              "9 unique skills locked and observed ready on 6 workers")
+    return AcceptanceItem("A5", "PASS", "9 unique skills locked")
 
 
 def _a6_suites(evidence: EvidenceCollector, live: bool) -> AcceptanceItem:
@@ -450,8 +450,8 @@ def _a8_docs(evidence: EvidenceCollector, run_id: str) -> AcceptanceItem:
     try:
         lock = json.loads((Path("skills") / "skills.lock.json")
                           .read_text(encoding="utf-8"))
-        if len({s["name"] for s in lock.get("skills", [])}) != 8:
-            problems.append("lock skills != 8")
+        if len({s["name"] for s in lock.get("skills", [])}) != 9:
+            problems.append("lock skills != 9")
         if len(lock.get("assignments", {})) != 6:
             problems.append("lock assignments != 6")
     except (OSError, json.JSONDecodeError) as exc:

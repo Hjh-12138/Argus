@@ -26,87 +26,98 @@ class MetaDecision:
     checked_source_sha256: str | None = None
 
 
+def verify_finding(snapshot: SourceSnapshot, finding: Finding) -> MetaDecision:
+    """确定性校验单个 finding：path/line/hash/evidence/actionability。
+
+    纯函数、无状态、可直接在任意 agent 输出边界调用（R1.2 结果校验下沉）。
+    只验证形式与引用，不验证语义（P6：语义层单独接 LLM 研判）。
+    """
+    snapshot_files = {f.path: f for f in snapshot.files}
+    return _decide(snapshot, snapshot_files, finding)
+
+
 class MetaReviewer:
     """对 AgentResult 的 path/line/hash/evidence/actionability 做独立校验。"""
 
     def review(self, snapshot: SourceSnapshot,
                results: tuple[AgentResult, ...] | list[AgentResult]) -> tuple[MetaDecision, ...]:
-        decisions: list[MetaDecision] = []
-        snapshot_files = {f.path: f for f in snapshot.files}
-        for result in results:
-            for finding in result.findings:
-                decisions.append(self._decide(snapshot, snapshot_files, finding))
-        return tuple(decisions)
+        return tuple(
+            verify_finding(snapshot, finding)
+            for result in results
+            for finding in result.findings
+        )
 
-    def _decide(self, snapshot: SourceSnapshot, snapshot_files: dict,
-                finding: Finding) -> MetaDecision:
-        # 项目级 finding 可以 file=None，但必须有 manifest evidence；初赛只处理文件级 finding。
-        if finding.file is None:
-            if finding.evidence and finding.evidence.detector:
-                return self._actionability(finding, checked_sha=None)
-            return MetaDecision(finding.id, "NEEDS_EVIDENCE",
-                                ("MANIFEST_EVIDENCE_MISSING",),
-                                "project-level finding lacks manifest evidence")
 
-        sf = snapshot_files.get(finding.file)
-        if sf is None:
+def _decide(snapshot: SourceSnapshot, snapshot_files: dict,
+            finding: Finding) -> MetaDecision:
+    # 项目级 finding 可以 file=None，但必须有 manifest evidence；初赛只处理文件级 finding。
+    if finding.file is None:
+        if finding.evidence and finding.evidence.detector:
+            return _actionability(finding, checked_sha=None)
+        return MetaDecision(finding.id, "NEEDS_EVIDENCE",
+                            ("MANIFEST_EVIDENCE_MISSING",),
+                            "project-level finding lacks manifest evidence")
+
+    sf = snapshot_files.get(finding.file)
+    if sf is None:
+        return MetaDecision(finding.id, "HALLUCINATION",
+                            ("PATH_NOT_IN_SNAPSHOT",),
+                            f"path {finding.file!r} is not present in snapshot")
+
+    file_path = Path(snapshot.root) / finding.file
+    if not file_path.exists():
+        return MetaDecision(finding.id, "HALLUCINATION",
+                            ("PATH_NOT_READABLE",),
+                            f"snapshot path {finding.file!r} cannot be read")
+
+    actual_sha = _sha256(file_path)
+    # Snapshot manifest 自身与磁盘已漂移，finding 不能继续验证。
+    if actual_sha != sf.sha256:
+        return MetaDecision(finding.id, "NEEDS_EVIDENCE",
+                            ("SNAPSHOT_HASH_MISMATCH",),
+                            "source changed after snapshot; rerun on a new snapshot",
+                            checked_source_sha256=actual_sha)
+
+    if finding.evidence and finding.evidence.source_sha256:
+        if finding.evidence.source_sha256 != sf.sha256:
             return MetaDecision(finding.id, "HALLUCINATION",
-                                ("PATH_NOT_IN_SNAPSHOT",),
-                                f"path {finding.file!r} is not present in snapshot")
-
-        file_path = Path(snapshot.root) / finding.file
-        if not file_path.exists():
-            return MetaDecision(finding.id, "HALLUCINATION",
-                                ("PATH_NOT_READABLE",),
-                                f"snapshot path {finding.file!r} cannot be read")
-
-        actual_sha = _sha256(file_path)
-        # Snapshot manifest 自身与磁盘已漂移，finding 不能继续验证。
-        if actual_sha != sf.sha256:
-            return MetaDecision(finding.id, "NEEDS_EVIDENCE",
-                                ("SNAPSHOT_HASH_MISMATCH",),
-                                "source changed after snapshot; rerun on a new snapshot",
+                                ("EVIDENCE_HASH_MISMATCH",),
+                                "finding evidence hash does not match snapshot",
                                 checked_source_sha256=actual_sha)
 
-        if finding.evidence and finding.evidence.source_sha256:
-            if finding.evidence.source_sha256 != sf.sha256:
-                return MetaDecision(finding.id, "HALLUCINATION",
-                                    ("EVIDENCE_HASH_MISMATCH",),
-                                    "finding evidence hash does not match snapshot",
-                                    checked_source_sha256=actual_sha)
+    lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    if finding.line_start is not None:
+        line_end = finding.line_end or finding.line_start
+        if finding.line_start < 1 or line_end < finding.line_start or line_end > len(lines):
+            return MetaDecision(finding.id, "HALLUCINATION",
+                                ("LINE_OUT_OF_RANGE",),
+                                f"line range {finding.line_start}-{line_end} outside file",
+                                checked_source_sha256=actual_sha)
 
-        lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
-        if finding.line_start is not None:
-            line_end = finding.line_end or finding.line_start
-            if finding.line_start < 1 or line_end < finding.line_start or line_end > len(lines):
-                return MetaDecision(finding.id, "HALLUCINATION",
-                                    ("LINE_OUT_OF_RANGE",),
-                                    f"line range {finding.line_start}-{line_end} outside file",
-                                    checked_source_sha256=actual_sha)
+    if finding.severity in ("critical", "high"):
+        if not finding.evidence or not finding.evidence.context_lines:
+            return MetaDecision(finding.id, "NEEDS_EVIDENCE",
+                                ("EVIDENCE_INSUFFICIENT",),
+                                "critical/high finding requires context evidence",
+                                checked_source_sha256=actual_sha)
 
-        if finding.severity in ("critical", "high"):
-            if not finding.evidence or not finding.evidence.context_lines:
-                return MetaDecision(finding.id, "NEEDS_EVIDENCE",
-                                    ("EVIDENCE_INSUFFICIENT",),
-                                    "critical/high finding requires context evidence",
-                                    checked_source_sha256=actual_sha)
+    return _actionability(finding, checked_sha=actual_sha)
 
-        return self._actionability(finding, checked_sha=actual_sha)
 
-    def _actionability(self, finding: Finding, checked_sha: str | None) -> MetaDecision:
-        if not finding.remediation.strip():
-            return MetaDecision(finding.id, "NOT_ACTIONABLE",
-                                ("REMEDIATION_MISSING",),
-                                "finding has no concrete remediation",
-                                checked_source_sha256=checked_sha)
-        if not finding.verification.strip():
-            return MetaDecision(finding.id, "NOT_ACTIONABLE",
-                                ("VERIFICATION_MISSING",),
-                                "finding has no verification method",
-                                checked_source_sha256=checked_sha)
-        return MetaDecision(finding.id, "VERIFIED", ("OK",),
-                            "path/line/hash/evidence/actionability consistent",
+def _actionability(finding: Finding, checked_sha: str | None) -> MetaDecision:
+    if not finding.remediation.strip():
+        return MetaDecision(finding.id, "NOT_ACTIONABLE",
+                            ("REMEDIATION_MISSING",),
+                            "finding has no concrete remediation",
                             checked_source_sha256=checked_sha)
+    if not finding.verification.strip():
+        return MetaDecision(finding.id, "NOT_ACTIONABLE",
+                            ("VERIFICATION_MISSING",),
+                            "finding has no verification method",
+                            checked_source_sha256=checked_sha)
+    return MetaDecision(finding.id, "VERIFIED", ("OK",),
+                        "path/line/hash/evidence/actionability consistent",
+                        checked_source_sha256=checked_sha)
 
 
 def _sha256(path: Path) -> str:

@@ -1,0 +1,30 @@
+{
+  "schema_version": "1",
+  "scenario_id": "simple-maintainability",
+  "category": "simple",
+  "title": "Code maintainability smells",
+  "description": "pricing.py 植入 5 个确定性可维护性信号（长函数/魔法数字/裸字符串枚举/映射链/or链）。code agent 应精确产出这 5 条 finding，gate=warn。",
+  "expected_gate": "warn",
+  "expected_findings": [
+    {"key": "mt-function-length", "agent": "code", "category": "code.function_length",
+     "severity": "low", "file": "app/pricing.py", "line_start": 47, "line_end": 47,
+     "title": "Function body exceeds 100 non-blank lines"},
+    {"key": "mt-magic-number", "agent": "code", "category": "code.magic_number",
+     "severity": "low", "file": "app/pricing.py", "line_start": 43, "line_end": 43,
+     "title": "Magic number used in arithmetic with a named operand"},
+    {"key": "mt-bare-enum", "agent": "code", "category": "code.bare_string_enum",
+     "severity": "medium", "file": "app/pricing.py", "line_start": 15, "line_end": 15,
+     "title": "Bare string literals used as status/enum values"},
+    {"key": "mt-map-chain", "agent": "code", "category": "code.mapping_if_chain",
+     "severity": "medium", "file": "app/pricing.py", "line_start": 22, "line_end": 22,
+     "title": "If/elif chain maps inputs to constants"},
+    {"key": "mt-or-chain", "agent": "code", "category": "code.or_chain_membership",
+     "severity": "medium", "file": "app/pricing.py", "line_start": 35, "line_end": 35,
+     "title": "3+ 'var == literal' branches joined by 'or' should be a membership check"}
+  ],
+  "annotation": {
+    "annotator": "human-review",
+    "independent_of": "meta-detector",
+    "notes": "低置信启发式(103/106/109/110/111)不在本场景——fixture 工程上避免触发，只测高置信 5 条。"
+  }
+}

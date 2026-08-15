@@ -1,0 +1,14 @@
+{
+  "schema_version": "1",
+  "scenario_id": "abnormal-empty",
+  "category": "abnormal",
+  "title": "Empty target must not vacuously pass",
+  "description": "目标无任何可审源码（仅 .gitkeep 占位）。正确行为是 fail-closed：无审计对象应标 unknown，而非真空 pass。",
+  "expected_gate": "unknown",
+  "expected_findings": [],
+  "annotation": {
+    "annotator": "human-review",
+    "independent_of": "meta-detector",
+    "notes": "当前 Argus 会真空返回 pass（fail-open 缺口）。这是评测集按 P3 独立判据应暴露的 bug——待修，非评测集之错。此 gate 预期属判断（可再议）。"
+  }
+}

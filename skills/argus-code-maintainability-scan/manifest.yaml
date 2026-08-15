@@ -1,0 +1,20 @@
+name: argus-code-maintainability-scan
+version: 0.1.0
+owner: argus
+license: Apache-2.0
+category: assessor
+purpose: Deterministic headless assessor Skill that scans the immutable source snapshot for maintainability smells.
+execution:
+  command: ["python3", "implementation/main.py"]
+  input: json-file
+  output: json-file
+  timeoutSeconds: 60
+input_schema: schemas/input.schema.json
+output_schema: schemas/output.schema.json
+error_schema: schemas/error.schema.json
+permissions:
+  - snapshot.read
+  - own_task_artifact.write
+network: true  # AI Gateway access for LLM deep review
+idempotency: input_digest
+reusable_by: [argus]

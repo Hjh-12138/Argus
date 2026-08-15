@@ -1,0 +1,71 @@
+{
+  "schema_version": "1",
+  "scenario_id": "complex-webapp",
+  "category": "complex",
+  "title": "Web app with five cross-agent defects",
+  "description": "一个含 5 个缺陷的小型 web app，跨四个 assessor：SQL 注入 + 硬编码密钥（sec）、占位实现（code）、不存在的依赖（dep）、CI 不跑测试（delivery）。",
+  "expected_gate": "block",
+  "registry_fixture": "registry-fixture.json",
+  "expected_findings": [
+    {
+      "key": "sqli-1",
+      "agent": "sec",
+      "category": "security.sql_injection",
+      "severity": "critical",
+      "file": "app/search.py",
+      "line_start": 2,
+      "line_end": 2,
+      "cwe": "CWE-89",
+      "title": "SQL query concatenates untrusted input"
+    },
+    {
+      "key": "secret-1",
+      "agent": "sec",
+      "category": "security.secret",
+      "severity": "critical",
+      "file": "app/auth.py",
+      "line_start": 1,
+      "line_end": 1,
+      "cwe": "CWE-798",
+      "title": "Hardcoded credential detected"
+    },
+    {
+      "key": "placeholder-1",
+      "agent": "code",
+      "category": "code.placeholder",
+      "severity": "medium",
+      "file": "app/checkout.py",
+      "line_start": 2,
+      "line_end": 2,
+      "cwe": null,
+      "title": "Placeholder implementation remains in production code"
+    },
+    {
+      "key": "dep-1",
+      "agent": "dep",
+      "category": "dependency.nonexistent",
+      "severity": "high",
+      "file": "pyproject.toml",
+      "line_start": 1,
+      "line_end": 1,
+      "cwe": null,
+      "title": "dependency not found: hypersecure-jwt-validator-pro"
+    },
+    {
+      "key": "delivery-1",
+      "agent": "delivery",
+      "category": "delivery.test_gap",
+      "severity": "medium",
+      "file": ".github/workflows/ci.yml",
+      "line_start": 1,
+      "line_end": 1,
+      "cwe": null,
+      "title": "CI builds the project but does not run tests"
+    }
+  ],
+  "annotation": {
+    "annotator": "human-review",
+    "independent_of": "meta-detector",
+    "notes": "ground truth 由人标注缺陷语义，不依赖 Argus/Meta 输出（P5）。dep/delivery 的 line 粒度与 detector 固定行为一致（line 1）。"
+  }
+}

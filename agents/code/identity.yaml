@@ -7,6 +7,7 @@ capabilities:
   - code_rule_scan
   - placeholder_detect
   - state_machine_check
+  - maintainability_scan
 prohibited_capabilities:
   - modify_target_source
   - execute_target_tests
@@ -21,6 +22,7 @@ required_skills:
   - argus-snapshot-build
   - argus-finding-emit
 optional_skills:
+  - argus-code-maintainability-scan
   - semgrep
   - github_readonly
 tool_permissions:
@@ -30,4 +32,4 @@ tool_permissions:
 failure_impact: required
 agentteams_worker_name: argus-code
 agentteams_lifecycle: resident
-identity_version: code-2026.08.02.1
+identity_version: code-2026.08.15.1

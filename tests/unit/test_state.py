@@ -73,3 +73,37 @@ def test_cancel_flow(tmp_path):
     store.transition(rid, "RUNNING", "CANCELLING")
     store.transition(rid, "CANCELLING", "CANCELLED")
     assert store.get_status(rid) == "CANCELLED"
+
+
+def test_version_monotonic_increment(tmp_path):
+    store = StateStore(tmp_path / "state.db")
+    rid = store.begin_run()
+    assert store.get_version(rid) == 0
+    store.transition(rid, "CREATED", "PREFLIGHT")
+    assert store.get_version(rid) == 1
+    store.transition(rid, "PREFLIGHT", "SNAPSHOTTING")
+    assert store.get_version(rid) == 2
+    store.save_run(rid, gate="block")
+    assert store.get_version(rid) == 3
+
+
+def test_written_by_recorded(tmp_path):
+    store = StateStore(tmp_path / "state.db")
+    rid = store.begin_run(writer="manager-llm")
+    store.transition(rid, "CREATED", "PREFLIGHT", writer="manager-llm")
+    run = store.get_run(rid)
+    assert run["written_by"] == "manager-llm"
+    assert run["version"] == 1
+
+
+def test_events_traceability(tmp_path):
+    store = StateStore(tmp_path / "state.db")
+    rid = store.begin_run(writer="w1")
+    store.transition(rid, "CREATED", "PREFLIGHT", writer="w1")
+    store.save_run(rid, gate="warn", writer="w2")
+    events = store.get_events(rid)
+    assert [e["action"] for e in events] == ["create", "transition", "save"]
+    assert [e["writer"] for e in events] == ["w1", "w1", "w2"]
+    assert events[1]["from_status"] == "CREATED"
+    assert events[1]["to_status"] == "PREFLIGHT"
+    assert events[2]["version"] == 2

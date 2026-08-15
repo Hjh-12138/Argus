@@ -47,7 +47,8 @@ def render_report(run_id: str, snapshot: SourceSnapshot,
                   meta_decisions: tuple[MetaDecision, ...],
                   policy: PolicyDecision,
                   coverage=None,
-                  attack_verdict: str = "NOT_RUN") -> dict:
+                  attack_verdict: str = "NOT_RUN",
+                  not_audited_domains: tuple[str, ...] = ()) -> dict:
     meta_by_id = {d.finding_id: d for d in meta_decisions}
     findings = []
     quality_counts = {
@@ -86,6 +87,7 @@ def render_report(run_id: str, snapshot: SourceSnapshot,
         "skip_reasons": getattr(coverage, "skip_reasons", {}),
         "agents_required": sorted(r.agent for r in results if r.required),
         "agents_completed": sorted(r.agent for r in results if r.status == "completed"),
+        "agents_not_audited": sorted(not_audited_domains),
     }
 
     return {

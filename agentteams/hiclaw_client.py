@@ -7,6 +7,7 @@ AgentTeams v1.2.0-beta.1 does not expose those resources through hiclaw.
 from __future__ import annotations
 
 import base64
+import fnmatch
 import hashlib
 import json
 import re
@@ -22,6 +23,46 @@ class HiclawError(Exception):
 
 
 _TEXT_SKILL_SUFFIXES = {".json", ".md", ".py", ".txt", ".yaml", ".yml"}
+
+# 写权限 ACL（R2.1）：writer 角色 -> 允许写入的 path 模式（fnmatch，相对 projects/ 或 tasks/ 的完整路径）。
+# 把「文件名约定」升级为「强制 ACL」——越界写（如 dep 写 report.json）在客户端直接拦截。
+_WRITE_ACL: dict[str, tuple[str, ...]] = {
+    "argus-cli": (
+        "projects/*/snapshot.zip",
+        "projects/*/snapshot.id",
+        "projects/*/registry-fixture.json",
+    ),
+    "dep": (
+        "projects/*/dep-findings.json",
+        "projects/*/findings-dep.md",
+        "projects/*/findings-argus-dep.md",
+        "tasks/*/artifacts/dep-*",
+    ),
+    "code": (
+        "projects/*/code-findings.json",
+        "projects/*/findings-code.md",
+        "projects/*/findings-argus-code.md",
+        "tasks/*/artifacts/code-*",
+    ),
+    "sec": (
+        "projects/*/sec-findings.json",
+        "projects/*/findings-sec.md",
+        "projects/*/findings-argus-sec.md",
+        "tasks/*/artifacts/sec-*",
+    ),
+    "delivery": (
+        "projects/*/delivery-findings.json",
+        "projects/*/findings-delivery.md",
+        "tasks/*/artifacts/delivery-*",
+    ),
+    "meta": (
+        "projects/*/meta-decisions.json",
+        "projects/*/meta-review.md",
+    ),
+    "synth": (
+        "projects/*/report.json",
+    ),
+}
 
 
 def _skill_artifact_bytes(path: Path) -> bytes:
@@ -439,8 +480,9 @@ class HiclawClient:
             raise HiclawError("create-project.sh returned no result marker")
         return self._json_output(raw.rsplit(marker, 1)[1].strip(), "create project")
 
-    def write_shared_text(self, relative_path: str, content: str) -> None:
-        relative = self._shared_relative(relative_path)
+    def write_shared_text(self, relative_path: str, content: str, *,
+                          writer: str = "argus-cli") -> None:
+        relative = self._shared_relative(relative_path, writer)
         target = self.SHARED_ROOT / relative
         script = (
             "set -eu; target=\"$1\"; mkdir -p \"$(dirname \"$target\")\"; "
@@ -451,14 +493,15 @@ class HiclawClient:
             input_text=content, timeout=60,
         )
 
-    def publish_shared_text(self, relative_path: str, content: str) -> None:
+    def publish_shared_text(self, relative_path: str, content: str, *,
+                            writer: str = "argus-cli") -> None:
         """Publish exact content to MinIO and the Manager mirror.
 
         Project creation has a background mirror that can race with a local
         rewrite. Publishing from a private temporary file makes the MinIO
         object authoritative before updating the shared local mirror.
         """
-        relative = self._shared_relative(relative_path)
+        relative = self._shared_relative(relative_path, writer)
         local = self.SHARED_ROOT / relative
         remote = f"{self.STORAGE_ROOT}/{relative.as_posix()}"
         script = r'''
@@ -476,9 +519,10 @@ cp "$tmp" "$1"
         )
 
     def publish_shared_file(self, relative_path: str,
-                            source_path: Path) -> None:
+                            source_path: Path, *,
+                            writer: str = "argus-cli") -> None:
         """Publish exact binary bytes to MinIO and the Manager mirror."""
-        relative = self._shared_relative(relative_path)
+        relative = self._shared_relative(relative_path, writer)
         source = Path(source_path).resolve()
         if not source.is_file():
             raise HiclawError(f"shared source file does not exist: {source}")
@@ -524,8 +568,9 @@ cp "$tmp" "$1"
         )
         return proc.returncode == 0
 
-    def sync_shared_directory(self, relative_path: str) -> None:
-        relative = self._shared_relative(relative_path)
+    def sync_shared_directory(self, relative_path: str, *,
+                              writer: str = "argus-cli") -> None:
+        relative = self._shared_relative(relative_path, writer)
         local = f"{self.SHARED_ROOT / relative}/"
         remote = f"{self.STORAGE_ROOT}/{relative.as_posix()}/"
         self._docker_exec("mc", "mirror", local, remote, "--overwrite", timeout=120)
@@ -614,11 +659,19 @@ curl -fsS -X PUT \
             raise HiclawError(f"invalid {kind} id: {value!r}")
 
     @staticmethod
-    def _shared_relative(value: str) -> PurePosixPath:
+    def _shared_relative(value: str, writer: str | None = None) -> PurePosixPath:
         normalized = value.replace("\\", "/")
         path = PurePosixPath(normalized)
         if path.is_absolute() or ".." in path.parts or not path.parts:
             raise HiclawError(f"unsafe shared path: {value!r}")
         if path.parts[0] not in ("projects", "tasks"):
             raise HiclawError("shared path must be under projects/ or tasks/")
+        if writer is not None:
+            patterns = _WRITE_ACL.get(writer)
+            if patterns is None:
+                raise HiclawError(f"unknown writer for ACL: {writer!r}")
+            posix = path.as_posix()
+            if not any(fnmatch.fnmatch(posix, p) for p in patterns):
+                raise HiclawError(
+                    f"writer {writer!r} not allowed to write {posix!r}")
         return path

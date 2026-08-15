@@ -1,0 +1,14 @@
+{
+  "schema_version": "1",
+  "scenarios": [
+    {"id": "simple-sqli", "category": "simple", "path": "simple/simple-sqli"},
+    {"id": "simple-secret", "category": "simple", "path": "simple/simple-secret"},
+    {"id": "simple-clean", "category": "simple", "path": "simple/simple-clean"},
+    {"id": "complex-webapp", "category": "complex", "path": "complex/complex-webapp"},
+    {"id": "abnormal-doc-only", "category": "abnormal", "path": "abnormal/abnormal-doc-only"},
+    {"id": "abnormal-secret-placeholder", "category": "abnormal", "path": "abnormal/abnormal-secret-placeholder"},
+    {"id": "abnormal-binary", "category": "abnormal", "path": "abnormal/abnormal-binary"},
+    {"id": "abnormal-empty", "category": "abnormal", "path": "abnormal/abnormal-empty"},
+    {"id": "simple-maintainability", "category": "simple", "path": "simple/simple-maintainability"}
+  ]
+}

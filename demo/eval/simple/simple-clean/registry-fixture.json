@@ -1,0 +1,4 @@
+{
+  "requests": {"exists": true},
+  "pytest": {"exists": true}
+}

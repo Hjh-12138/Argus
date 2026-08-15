@@ -1,0 +1,15 @@
+{
+  "schema_version": "1",
+  "scenario_id": "simple-clean",
+  "category": "simple",
+  "title": "Clean code, zero defects",
+  "description": "参数化查询 + 正常依赖 + CI 跑测试。四个 assessor 都不应产出 finding（零误报测试）。",
+  "expected_gate": "pass",
+  "registry_fixture": "registry-fixture.json",
+  "expected_findings": [],
+  "annotation": {
+    "annotator": "human-review",
+    "independent_of": "meta-detector",
+    "notes": "空 expected_findings 即纯精确（precision）测试：Argus 不得报告任何 finding。"
+  }
+}

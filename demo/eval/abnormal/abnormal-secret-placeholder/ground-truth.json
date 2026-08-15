@@ -1,0 +1,14 @@
+{
+  "schema_version": "1",
+  "scenario_id": "abnormal-secret-placeholder",
+  "category": "abnormal",
+  "title": "Placeholder secrets must not flag",
+  "description": "占位/示例密钥（your-…、changeme）不应被 sec 误报为硬编码密钥。测误报抑制。",
+  "expected_gate": "pass",
+  "expected_findings": [],
+  "annotation": {
+    "annotator": "human-review",
+    "independent_of": "meta-detector",
+    "notes": "这些值语义上不是真实凭据，正确行为是零 finding。若 sec 误报则是精确（precision）缺陷。"
+  }
+}

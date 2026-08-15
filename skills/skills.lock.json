@@ -1,8 +1,8 @@
 {
   "schema_version": "2",
-  "source": "nacos://nacos:nacos@nacos:8848/public",
+  "source": "nacos://nacos:8848/public",
   "auth_type": "nacos",
-  "locked_at": "2026-08-11T05:54:28.234810+00:00Z",
+  "locked_at": "2026-08-14T11:37:50.246068+00:00Z",
   "skills": [
     {
       "name": "argus-dependency-inspect",
@@ -11,17 +11,17 @@
     },
     {
       "name": "argus-code-rule-scan",
-      "version": "0.0.9",
+      "version": "0.0.1",
       "local_sha256": "1b1c3515d63824980013700ad271bab2fd824346708e914dddd3d2a3b63e501d"
     },
     {
       "name": "argus-secret-scan",
-      "version": "0.0.9",
+      "version": "0.0.1",
       "local_sha256": "fdc43509fea8381cce958fccb26566ce776dbc225e9cc55a99ae226adea9af62"
     },
     {
       "name": "argus-ci-policy-check",
-      "version": "0.0.9",
+      "version": "0.0.1",
       "local_sha256": "dc0bac4dcc9b8894ca1c2707bad91b7790e8fde2472e52e05e0ca6454137c80a"
     },
     {
@@ -31,18 +31,23 @@
     },
     {
       "name": "argus-evidence-verify",
-      "version": "0.0.9",
+      "version": "0.0.1",
       "local_sha256": "e3c4fdb8c86c6632432ffd7a9d47a4b6c43c4dfedd945df23093351df5154f30"
     },
     {
       "name": "argus-release-policy-evaluate",
-      "version": "0.0.9",
+      "version": "0.0.1",
       "local_sha256": "7ba263d2e917cf6640df13b62fce1ac6884d74914664729fe046b3b9ff9b9a75"
     },
     {
       "name": "argus-report-materialize",
-      "version": "0.0.9",
+      "version": "0.0.1",
       "local_sha256": "7a210daad7794994ebe73f9a102ed3ba869ae53d3b08da81dadb6c609106164b"
+    },
+    {
+      "name": "argus-code-maintainability-scan",
+      "version": "0.0.1",
+      "local_sha256": "4999d2a8f3deed5f04011e8dd1e91caa6c372d7b1be506f2b2f703e1e6a0e6ee"
     }
   ],
   "assignments": {
@@ -52,7 +57,8 @@
     ],
     "argus-code": [
       "argus-code-rule-scan",
-      "argus-finding-emit"
+      "argus-finding-emit",
+      "argus-code-maintainability-scan"
     ],
     "argus-sec": [
       "argus-secret-scan",
